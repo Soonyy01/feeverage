@@ -49,6 +49,7 @@ export const TOKEN_ABI = [
   "function symbol() view returns (string)",
   "function logo() view returns (string)",
   "function description() view returns (string)",
+  "function getTokenInfo() view returns (address tokenDeployer,string tokenLogo,string tokenDescription,(string twitter,string telegram,string discord,string website,string farcaster) tokenSocials)",
   "function totalSupply() view returns (uint256)",
   "function socials() view returns (string twitter,string telegram,string discord,string website,string farcaster)",
   "function balanceOf(address) view returns (uint256)",
@@ -385,6 +386,20 @@ async function addCurveFees(list) {
   }
 }
 
+// Pons V2 tokens expose logo, description and socials through getTokenInfo().
+// The single getters are tried as a fallback for other token versions.
+async function tokenMeta(tk) {
+  try {
+    const r = await tk.getTokenInfo();
+    const so = r.tokenSocials ?? r[3];
+    return { deployer: r.tokenDeployer ?? r[0], logo: r.tokenLogo ?? r[1], description: r.tokenDescription ?? r[2],
+      socials: { twitter: so?.twitter ?? so?.[0] ?? "", telegram: so?.telegram ?? so?.[1] ?? "", website: so?.website ?? so?.[3] ?? "" } };
+  } catch {
+    const [logo, description, so] = await Promise.all([tk.logo().catch(() => ""), tk.description().catch(() => ""), tk.socials().catch(() => null)]);
+    return { logo, description, socials: so ? { twitter: so.twitter, telegram: so.telegram, website: so.website } : {} };
+  }
+}
+
 async function fromChain() {
   const latest = await provider.getBlockNumber();
   const start = Number(C.startBlock) || Math.max(0, latest - 5_000_000);
@@ -404,10 +419,11 @@ async function fromChain() {
     // Only this site's launches: fees go to our operator and the description carries the strategy tag.
     if (info && C.feeRecipient && info.creatorFeeRecipient.toLowerCase() !== C.feeRecipient.toLowerCase()) return;
     const tk = new E.Contract(x.token, TOKEN_ABI, provider);
-    const [name, symbol, description] = await Promise.all([tk.name(), tk.symbol(), tk.description().catch(() => "")]).catch(() => []);
+    const [name, symbol, meta] = await Promise.all([tk.name(), tk.symbol(), tokenMeta(tk)]).catch(() => []);
+    const description = meta?.description ?? "";
     const st = parseStrategy(description || "");
     if (!st) return;
-    out.push({ token: x.token, curve: info?.curve ?? x.curve, deployer: info?.deployer ?? x.deployer, name, symbol, description, ...st, block: x.block ?? 0, feesEth: null, pendingEth: null });
+    out.push({ token: x.token, curve: info?.curve ?? x.curve, deployer: info?.deployer ?? x.deployer, name, symbol, description, logo: meta?.logo ?? "", socials: meta?.socials ?? {}, ...st, block: x.block ?? 0, feesEth: null, pendingEth: null });
   }));
   out.sort((a, b) => b.block - a.block);
   await addCurveFees(out);
@@ -466,9 +482,9 @@ async function enrichChain(list) {
   await Promise.all(list.filter((x) => x.token).map(async (x) => {
     const tk = new E.Contract(x.token, TOKEN_ABI, provider);
     const jobs = [
-      x.logo == null ? tk.logo().then((v) => (x.logo = v)).catch(() => (x.logo = "")) : null,
-      x.description == null ? tk.description().then((v) => (x.description = v)).catch(() => {}) : null,
-      x.socials == null ? tk.socials().then((v) => (x.socials = { twitter: v.twitter, telegram: v.telegram, website: v.website })).catch(() => (x.socials = {})) : null,
+      x.logo == null || x.description == null || x.socials == null
+        ? tokenMeta(tk).then((m) => { x.logo ??= m.logo; x.description ??= m.description; x.socials ??= m.socials; }).catch(() => {})
+        : null,
       x.supply == null ? tk.totalSupply().then((v) => (x.supply = Number(E.formatEther(v)))).catch(() => {}) : null,
     ];
     if (x.curve) {
