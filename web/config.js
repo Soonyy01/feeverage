@@ -29,7 +29,7 @@ window.FEEVERAGE_CONFIG = {
   factory: "0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e",
   launchConfigId: 0,
   // First block to scan when there is no keeper API (set it to the day you go live).
-  startBlock: 0,
+  startBlock: 83500000,
 
   // Hyperliquid
   hlInfo: "https://api.hyperliquid.xyz/info",

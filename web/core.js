@@ -400,6 +400,14 @@ async function tokenMeta(tk) {
   }
 }
 
+// Runs fn over items with at most n in flight, so a long launch list doesn't flood the RPC.
+async function pool(items, n, fn) {
+  let i = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (i < items.length) { const x = items[i++]; try { await fn(x); } catch {} }
+  }));
+}
+
 async function fromChain() {
   const latest = await provider.getBlockNumber();
   const start = Number(C.startBlock) || Math.max(0, latest - 5_000_000);
@@ -414,17 +422,23 @@ async function fromChain() {
   }
   for (const m of store.get("feeverage.launches", [])) if (!found.has(m.token.toLowerCase())) found.set(m.token.toLowerCase(), m);
   const out = [];
-  await Promise.all([...found.values()].map(async (x) => {
+  // The factory serves every launchpad on the chain, so most launches are someone else's.
+  // Tokens already found not to be ours are remembered and skipped on the next load.
+  const notOurs = new Set(store.get("feev.notours", []));
+  const skip = (a) => { notOurs.add(a.toLowerCase()); };
+  const todo = [...found.values()].filter((x) => !notOurs.has(x.token.toLowerCase()));
+  await pool(todo, 6, async (x) => {
     const info = await factory.getLaunchedToken(x.token).catch(() => null);
     // Only this site's launches: fees go to our operator and the description carries the strategy tag.
-    if (info && C.feeRecipient && info.creatorFeeRecipient.toLowerCase() !== C.feeRecipient.toLowerCase()) return;
+    if (info && C.feeRecipient && info.creatorFeeRecipient.toLowerCase() !== C.feeRecipient.toLowerCase()) return skip(x.token);
     const tk = new E.Contract(x.token, TOKEN_ABI, provider);
     const [name, symbol, meta] = await Promise.all([tk.name(), tk.symbol(), tokenMeta(tk)]).catch(() => []);
     const description = meta?.description ?? "";
     const st = parseStrategy(description || "");
-    if (!st) return;
+    if (!st) { if (meta) skip(x.token); return; }
     out.push({ token: x.token, curve: info?.curve ?? x.curve, deployer: info?.deployer ?? x.deployer, name, symbol, description, logo: meta?.logo ?? "", socials: meta?.socials ?? {}, ...st, block: x.block ?? 0, feesEth: null, pendingEth: null });
-  }));
+  });
+  store.set("feev.notours", [...notOurs].slice(-5000));
   out.sort((a, b) => b.block - a.block);
   await addCurveFees(out);
   return out;
