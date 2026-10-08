@@ -1,6 +1,6 @@
 import {
   $, C, CURVE_ABI, E, TOKEN_ABI, chain, compactUsd, errMsg, esc, ethPx, fmt, holdingLive, initShell, isAddr, live, loadHoldings, loadTokens,
-  onMarkets, provider, px, readChain, refreshTokenPrices, short, stripTag, t, tokenLogo, usd, wallet,
+  onMarkets, pnlText, provider, px, readChain, refreshTokenPrices, short, stripTag, t, tokenLogo, usd, wallet,
 } from "./core.js";
 
 initShell();
@@ -56,7 +56,7 @@ function tickLive(force) {
     if (el.textContent !== v) el.textContent = v;
     if (cls != null) el.className = cls;
   };
-  const pnlTxt = x.open ? (x.pnlUsd > 0 ? "+" : "") + usd(x.pnlUsd) : t("t.nopos");
+  const pnlTxt = x.open ? pnlText(x) : t("t.nopos");
   set("pnl", pnlTxt, x.pnlUsd > 0 ? "pos" : x.pnlUsd < 0 ? "neg" : "");
   if (!force && lastPnl != null && x.open && x.pnlUsd !== lastPnl) {
     const el = document.querySelector('[data-f="pnl"]');

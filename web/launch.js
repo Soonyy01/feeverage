@@ -179,7 +179,7 @@ $("launchForm").addEventListener("submit", async (ev) => {
   if (!E) return setStatus("ethers did not load. Check your connection and reload.", "err");
   if (!isAddr(C.feeRecipient)) return setStatus(t("l.e.fee"), "err");
   if (!name || !symbol) return setStatus(t("l.e.name"), "err");
-  if (buyEth < 0.0001) return setStatus(t("l.e.buy"), "err");
+  if (!(buyEth >= 0)) return setStatus(t("l.e.buy"), "err");
 
   const btn = $("launchBtn");
   btn.disabled = true;
@@ -202,14 +202,24 @@ $("launchForm").addEventListener("submit", async (ev) => {
       C.feeRecipient, taxBps, false, econ, E.hexlify(E.randomBytes(32)),
     ];
     const quoteIn = E.parseEther(String(buyEth));
-    const value = fee + quoteIn;
-    const router = new E.Contract(C.router, ROUTER_ABI, signer);
-    const args = [params, C.launchConfigId, ZERO, quoteIn, 0n, me, [me]];
-
-    setStatus(t("l.s.sim"));
-    await router.launchAndBuy.staticCall(...args, { value });
-    setStatus(t("l.s.confirm"));
-    const tx = await router.launchAndBuy(...args, { value });
+    let tx;
+    if (quoteIn > 0n) {
+      // Launch + your first buy in one transaction.
+      const router = new E.Contract(C.router, ROUTER_ABI, signer);
+      const args = [params, C.launchConfigId, ZERO, quoteIn, 0n, me, [me]];
+      setStatus(t("l.s.sim"));
+      await router.launchAndBuy.staticCall(...args, { value: fee + quoteIn });
+      setStatus(t("l.s.confirm"));
+      tx = await router.launchAndBuy(...args, { value: fee + quoteIn });
+    } else {
+      // Launch only, straight on the factory: you pay just the launch fee.
+      const fs = new E.Contract(C.factory, FACTORY_ABI, signer);
+      const args = [params, C.launchConfigId, ZERO];
+      setStatus(t("l.s.sim"));
+      await fs.launchToken.staticCall(...args, { value: fee });
+      setStatus(t("l.s.confirm"));
+      tx = await fs.launchToken(...args, { value: fee });
+    }
     setStatus(`${t("l.s.sent")} <a href="${C.explorer}/tx/${tx.hash}" target="_blank" rel="noopener">view tx</a>`);
     const rc = await tx.wait();
     const ev2 = rc.logs.map((l) => { try { return f.interface.parseLog(l); } catch { return null; } }).find((x) => x?.name === "TokenLaunched");

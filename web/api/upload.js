@@ -31,6 +31,7 @@ async function viaBlob(buf, type, req) {
 async function viaCatbox(buf, type) {
   const fd = new FormData();
   fd.append("reqtype", "fileupload");
+  fd.append("userhash", "");
   fd.append("fileToUpload", new Blob([buf], { type }), `logo.${TYPES[type]}`);
   const r = await fetch("https://catbox.moe/user/api.php", { method: "POST", body: fd, signal: AbortSignal.timeout(8000) });
   const txt = (await r.text()).trim();
@@ -43,7 +44,7 @@ async function viaFreeimage(buf, type) {
   fd.append("key", "6d207e02198a847aa98d0a2a901485a5"); // public API key from freeimage.host docs
   fd.append("action", "upload");
   fd.append("format", "json");
-  fd.append("source", new Blob([buf], { type }), `logo.${TYPES[type]}`);
+  fd.append("source", Buffer.from(buf).toString("base64"));
   const r = await fetch("https://freeimage.host/api/1/upload", { method: "POST", body: fd, signal: AbortSignal.timeout(8000) });
   const j = await r.json().catch(() => ({}));
   const url = j?.image?.url;
@@ -51,7 +52,9 @@ async function viaFreeimage(buf, type) {
   return url;
 }
 
-const HOSTS = [["blob", viaBlob], ["catbox", viaCatbox], ["freeimage", viaFreeimage]];
+// Only Blob: the free hosts refuse uploads from Vercel servers. When Blob is not connected,
+// the launch page stores the logo on-chain instead (see api/logo.js).
+const HOSTS = [["blob", viaBlob]];
 
 async function store(buf, type, req) {
   const errors = [];

@@ -33,6 +33,7 @@ export const ROUTER_ABI = [
   "function launchAndBuy((string name,string symbol,string logo,string description,(string twitter,string telegram,string discord,string website,string farcaster) socials,address creatorFeeRecipient,uint16 creatorTaxBps,bool buybackEnabled,bytes32 expectedEconomics,bytes32 salt) params,uint256 launchConfigId,address pairToken,uint256 quoteIn,uint256 minTokensOut,address recipient,address[] snipeTaxExemptions) payable returns (address token,address curve,uint256 tokensOut)",
 ];
 export const FACTORY_ABI = [
+  "function launchToken((string name,string symbol,string logo,string description,(string twitter,string telegram,string discord,string website,string farcaster) socials,address creatorFeeRecipient,uint16 creatorTaxBps,bool buybackEnabled,bytes32 expectedEconomics,bytes32 salt) params,uint256 launchConfigId,address pairToken) payable returns (address token,address curve)",
   "function launchFee() view returns (uint256)",
   "function launchEnabled() view returns (bool)",
   "function canLaunch(address) view returns (bool)",
@@ -299,8 +300,19 @@ export function live(tok) {
   r.feesUsd = (tok.feesEth ?? 0) * ethPx;
   r.mcapUsd = tok.mcapEth != null ? tok.mcapEth * ethPx : null;
   r.open = r.notionalUsd > 0;
+  // PnL as a % of the margin put in (what the fees funded).
+  const base = (tok.bridgedUsd ?? 0) > 0 ? tok.bridgedUsd * (C.marginUse ?? 0.95) : (r.equityUsd ?? 0) - (r.pnlUsd ?? 0);
+  r.pnlPct = r.open && base > 0 ? (r.pnlUsd / base) * 100 : null;
   return r;
 }
+
+// "+$12.34 (+4.1%)" / "−$5.20 (−2.0%)": always signed, green when up, red when down.
+const sgn = (n) => (n > 0 ? "+" : n < 0 ? "−" : "");
+export function pnlText(x) {
+  const pct = x.pnlPct != null ? ` (${sgn(x.pnlPct)}${fmt(Math.abs(x.pnlPct), 1)}%)` : "";
+  return `${sgn(x.pnlUsd)}$${fmt(Math.abs(x.pnlUsd), 2)}${pct}`;
+}
+const entryText = (x) => `${px(x.entryPx)} → ${px(x.markPx)}`;
 
 // ------------------------------------------------------------------ tokens
 async function fromKeeper() {
@@ -316,6 +328,30 @@ const POOL_REGISTERED = E ? E.id("PoolRegistered(bytes32,address,address,address
 
 // getLogs over any range: starts with a wide window and narrows it when the RPC refuses.
 let span = 2_000_000;
+// Logs from the Blockscout explorer (etherscan-style API). Returns null if it can't answer.
+async function explorerLogs(address, topic0, fromBlock = 0) {
+  const bases = [C.explorer + "/api", typeof location !== "undefined" && /^https?:/.test(location.protocol) ? location.origin + "/api/explorer" : null].filter(Boolean);
+  for (const base of bases) {
+    try {
+      const out = [];
+      let from = fromBlock;
+      for (let page = 0; page < 50; page++) {
+        const q = new URLSearchParams({ module: "logs", action: "getLogs", address, topic0, fromBlock: String(from), toBlock: "latest" });
+        const r = await fetch(`${base}?${q}`, { signal: AbortSignal.timeout(10000) });
+        const j = await r.json();
+        const rows = Array.isArray(j?.result) ? j.result : null;
+        if (!rows) { if (String(j?.message || "").toLowerCase().includes("no ")) break; throw new Error("bad explorer reply"); }
+        for (const x of rows) out.push({ address: x.address, topics: x.topics.filter(Boolean), data: x.data, blockNumber: Number(x.blockNumber), transactionHash: x.transactionHash });
+        if (rows.length < 1000) break;
+        from = Number(rows[rows.length - 1].blockNumber) + 1;
+      }
+      const seen = new Set();
+      return out.filter((l) => { const k = l.transactionHash + l.topics.join(); if (seen.has(k)) return false; seen.add(k); return true; });
+    } catch {}
+  }
+  return null;
+}
+
 export async function scanLogs(filter, fromBlock, toBlock) {
   const out = [];
   let from = Math.max(0, fromBlock);
@@ -353,7 +389,10 @@ async function fromChain() {
   const latest = await provider.getBlockNumber();
   const start = Number(C.startBlock) || Math.max(0, latest - 5_000_000);
   const found = new Map();
-  const logs = await scanLogs({ address: C.factory, topics: [factory.interface.getEvent("TokenLaunched").topicHash] }, start, latest);
+  const topic = factory.interface.getEvent("TokenLaunched").topicHash;
+  // The explorer's indexed log search answers in one request; scanning the RPC block by
+  // block is the fallback and can take a while on a long chain.
+  const logs = (await explorerLogs(C.factory, topic, Number(C.startBlock) || 0)) ?? (await scanLogs({ address: C.factory, topics: [topic] }, start, latest));
   for (const l of logs) {
     const ev = factory.interface.parseLog(l);
     found.set(ev.args.token.toLowerCase(), { token: ev.args.token, curve: ev.args.curve, deployer: ev.args.deployer, block: l.blockNumber });
@@ -362,12 +401,13 @@ async function fromChain() {
   const out = [];
   await Promise.all([...found.values()].map(async (x) => {
     const info = await factory.getLaunchedToken(x.token).catch(() => null);
-    if (!info || info.creatorFeeRecipient.toLowerCase() !== C.feeRecipient.toLowerCase()) return;
+    // Only this site's launches: fees go to our operator and the description carries the strategy tag.
+    if (info && C.feeRecipient && info.creatorFeeRecipient.toLowerCase() !== C.feeRecipient.toLowerCase()) return;
     const tk = new E.Contract(x.token, TOKEN_ABI, provider);
-    const [name, symbol, description] = await Promise.all([tk.name(), tk.symbol(), tk.description().catch(() => "")]);
-    const st = parseStrategy(description);
+    const [name, symbol, description] = await Promise.all([tk.name(), tk.symbol(), tk.description().catch(() => "")]).catch(() => []);
+    const st = parseStrategy(description || "");
     if (!st) return;
-    out.push({ token: x.token, curve: info.curve, deployer: info.deployer, name, symbol, description, ...st, block: x.block ?? 0, feesEth: null, pendingEth: null });
+    out.push({ token: x.token, curve: info?.curve ?? x.curve, deployer: info?.deployer ?? x.deployer, name, symbol, description, ...st, block: x.block ?? 0, feesEth: null, pendingEth: null });
   }));
   out.sort((a, b) => b.block - a.block);
   await addCurveFees(out);
@@ -579,7 +619,8 @@ export function tokenCard(raw) {
       <span class="mk">${esc(x.market)}</span></div>
     <div class="strat"><span><span class="${x.isLong ? "side-l" : "side-s"}">${x.isLong ? "▲ Long" : "▼ Short"}</span> ${esc(x.market)} ${x.leverage}×</span>
       <span class="muted" style="font-size:11.5px">${t("card.mcap")} <b data-f="mcap" style="color:var(--ink)">${x.mcapUsd != null ? compactUsd(x.mcapUsd) : "—"}</b></span></div>
-    <div class="big ${x.pnlUsd > 0 ? "pos" : x.pnlUsd < 0 ? "neg" : ""}" data-f="pnl">${x.open ? (x.pnlUsd > 0 ? "+" : "") + usd(x.pnlUsd) : (x.bridgedUsd ?? 0) > 0 ? t("card.reopen") : t("card.waiting")}</div>
+    <div class="big ${x.pnlUsd > 0 ? "pos" : x.pnlUsd < 0 ? "neg" : ""}" data-f="pnl">${x.open ? pnlText(x) : (x.bridgedUsd ?? 0) > 0 ? t("card.reopen") : t("card.waiting")}</div>
+    ${x.open ? `<div class="sub"><span>${t("card.entry")} ${x.isLong ? "▲" : "▼"}</span><span data-f="entry">${entryText(x)}</span></div>` : ""}
     <div class="sub"><span>${t("card.next")}</span><span data-f="next">${usd(x.pendingUsd)} / $${C.minTopUpUsd}</span></div>
     <div class="meter"><i data-f="meter" style="width:${Math.min(100, (x.pendingUsd / C.minTopUpUsd) * 100)}%"></i></div>
     <div class="foot">
@@ -597,7 +638,7 @@ export function refreshCards(container, byToken) {
     const x = live(raw);
     const pnl = card.querySelector('[data-f="pnl"]');
     if (pnl && x.open) {
-      const txt = (x.pnlUsd > 0 ? "+" : "") + usd(x.pnlUsd);
+      const txt = pnlText(x);
       if (pnl.textContent !== txt) {
         const up = x.pnlUsd > (pnl._v ?? x.pnlUsd);
         pnl.textContent = txt;
@@ -606,6 +647,8 @@ export function refreshCards(container, byToken) {
         pnl._v = x.pnlUsd;
       }
     }
+    const en = card.querySelector('[data-f="entry"]');
+    if (en && x.open) en.textContent = entryText(x);
     const mc = card.querySelector('[data-f="mcap"]');
     if (mc && x.mcapUsd != null) mc.textContent = compactUsd(x.mcapUsd);
     const nx = card.querySelector('[data-f="next"]');
