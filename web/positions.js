@@ -1,5 +1,5 @@
 import {
-  $, C, E, esc, ethPx, fmt, holdingLive, initShell, loadHoldings, loadTokens, market, onMarkets, provider, readChain,
+  $, C, E, esc, ethPx, fmt, holdingLive, initShell, loadHoldings, loadTokens, market, onMarkets, pickRpc, provider, readChain,
   refreshTokenPrices, short, t, tokenLogo, tokenUrl, usd, wallet,
 } from "./core.js";
 
@@ -81,6 +81,7 @@ async function load() {
   $("pStatus").textContent = t("p.loading");
   try {
     await readChain();
+    await pickRpc();
     const [{ tokens }, bal] = await Promise.all([loadTokens(), provider ? provider.getBalance(user) : 0n]);
     ethBal = Number(E.formatEther(bal));
     holdings = await loadHoldings(user, tokens);

@@ -97,17 +97,51 @@ export const tokenUrl = (addr) => `token.html?t=${addr}`;
 const X_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.9 2H22l-7.6 8.7L23.3 22h-7l-5.5-7.2L4.5 22H1.4l8.1-9.3L1 2h7.1l5 6.6L18.9 2Zm-1.2 18h1.7L7.1 3.9H5.3L17.7 20Z"/></svg>`;
 
 // ------------------------------------------------------------------ chain
-export const provider = E ? new E.JsonRpcProvider(C.rpc, C.chainId, { staticNetwork: true }) : null;
-export const factory = provider ? new E.Contract(C.factory, FACTORY_ABI, provider) : null;
+// RPC: the official endpoint first, then a public mirror, then the site's own proxy
+// (/api/rpc), which works even when a visitor's network or browser blocks the others.
+const RPCS = [C.rpc, ...(C.rpcFallbacks ?? ["https://rpc.nodeflare.app/robinhood/public"]),
+  typeof location !== "undefined" && /^https?:/.test(location.protocol) ? location.origin + "/api/rpc" : null].filter(Boolean);
+const mkProvider = (url) => new E.JsonRpcProvider(url, C.chainId, { staticNetwork: true, batchMaxCount: 1 });
+export let provider = E ? mkProvider(RPCS[0]) : null;
+export let factory = provider ? new E.Contract(C.factory, FACTORY_ABI, provider) : null;
 export const chain = { ok: false, launchFee: null, launchOpen: null, maxTaxBps: 1000n, canLaunchMe: null };
+let rpcPick = null;
+export function pickRpc() {
+  if (!E) return Promise.resolve(null);
+  rpcPick ??= (async () => {
+    for (const url of RPCS) {
+      const p = mkProvider(url);
+      try {
+        const id = await Promise.race([
+          p.send("eth_chainId", []),
+          new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 6000)),
+        ]);
+        if (Number(id) !== Number(C.chainId)) continue;
+        provider = p;
+        factory = new E.Contract(C.factory, FACTORY_ABI, p);
+        return url;
+      } catch {}
+    }
+    rpcPick = null; // nothing answered: try again on the next call
+    return null;
+  })();
+  return rpcPick;
+}
 
 export async function readChain() {
+  await pickRpc();
   if (!factory) return chain;
   try {
-    const [fee, open, tax] = await Promise.all([factory.launchFee(), factory.launchEnabled(), factory.maxCreatorTaxBps()]);
-    Object.assign(chain, { ok: true, launchFee: fee, launchOpen: open, maxTaxBps: tax });
+    const [fee, open, tax] = await Promise.allSettled([factory.launchFee(), factory.launchEnabled(), factory.maxCreatorTaxBps()]);
+    if (fee.status !== "fulfilled") throw fee.reason;
+    Object.assign(chain, {
+      ok: true,
+      launchFee: fee.value,
+      launchOpen: open.status === "fulfilled" ? open.value : true,
+      maxTaxBps: tax.status === "fulfilled" ? tax.value : 1000n,
+    });
     const me = wallet.state.address;
-    chain.canLaunchMe = me ? await factory.canLaunch(me) : null;
+    chain.canLaunchMe = me ? await factory.canLaunch(me).catch(() => null) : null;
   } catch {
     chain.ok = false;
   }
@@ -439,6 +473,7 @@ async function enrichPositions(list) {
 
 // Returns { tokens, totals(), source }. Everything is real data; with no launches it is empty.
 export async function loadTokens() {
+  await pickRpc();
   let tokens = [], source;
   try {
     if (C.keeperApi) {
@@ -731,6 +766,7 @@ function wireWallet() {
 
 // ------------------------------------------------------------------ boot
 export function initShell() {
+  pickRpc();
   applyI18n();
   wireMenu();
   wireWallet();

@@ -153,17 +153,7 @@ function update() {
   renderChecks();
 }
 
-function renderChecks() {
-  const w = wallet.state;
-  const rows = [
-    [isAddr(C.feeRecipient), t("l.c.fee"), t("l.c.fee.x")],
-    [chain.ok, t("l.c.chain"), t("l.c.chain.x")],
-    [w.authenticated, w.address ? `Wallet ${short(w.address)}` : t("l.c.wallet"), t("l.c.wallet.x")],
-    [chain.canLaunchMe !== false, t("l.c.gate"), t("l.c.gate.x")],
-  ];
-  $("checks").innerHTML = rows.map(([ok, good, bad]) =>
-    `<div><span class="sq ${ok ? "live" : "off"}"></span>${esc(ok ? good : bad)}</div>`).join("");
-}
+function renderChecks() {}
 
 function setStatus(msg, kind = "") {
   $("launchStatus").className = "status " + kind;
