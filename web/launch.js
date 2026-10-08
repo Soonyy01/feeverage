@@ -67,6 +67,10 @@ async function useFile(file) {
       setLogo("");
       console.warn("logo upload:", e.message);
       dropState(`${t("l.logo.err")} · ${t("l.logo.link")}`, "err");
+      const why = document.createElement("small");
+      why.style.cssText = "display:block;opacity:.7;font-size:11px;margin-top:4px;word-break:break-word";
+      why.textContent = String(e.message || e).slice(0, 220);
+      $("dropState").append(why);
     } finally {
       uploading = null;
     }
