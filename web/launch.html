@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Launch · Feeverage</title>
+<meta name="description" content="Launch a token on Robinhood Chain. Its trading fees fund a leveraged Hyperliquid position.">
+<meta name="theme-color" content="#f4f2e8">
+<meta property="og:title" content="Feeverage — your token's fees. Leveraged.">
+<meta property="og:description" content="Launch a token on Robinhood Chain. Its trading fees fund a leveraged Hyperliquid position.">
+<meta property="og:image" content="assets/og-image.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" href="assets/logo-96.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="launch">
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="index.html" aria-label="Feeverage home">
+      <img src="assets/logo-96.png" alt="" width="38" height="38">
+      <span>FEEVERAGE</span>
+    </a>
+    <nav class="links" aria-label="Main">
+      <a href="launch.html" data-page="launch">Launch</a>
+      <a href="tokens.html" data-page="tokens">Tokens</a>
+      <a href="stats.html" data-page="stats">Stats</a>
+      <a href="docs.html" data-page="docs">Docs</a>
+    </nav>
+    <button class="btn" id="connect" type="button" style="margin-left:auto">Connect</button>
+  </div>
+</header>
+
+<div class="ticker" aria-label="Hyperliquid prices">
+  <div class="track" id="ticker"></div>
+</div>
+
+<main>
+  <div class="wrap">
+    <div class="banner-note" id="setupNote" hidden></div>
+    <section class="page-head" id="launch">
+      <div class="sec-head">
+        <div><span class="label muted">New token</span><h1 class="echo-h" style="font-size:clamp(36px,5.6vw,66px);text-transform:uppercase">Launch</h1></div>
+        <span class="netpill label" id="gate"><span class="sq"></span>Checking launch gate…</span>
+      </div>
+
+      <div class="launch">
+        <form class="panel" id="launchForm" novalidate>
+          <fieldset>
+            <legend class="label">Token</legend>
+            <div class="row">
+              <label class="f" for="name">Name <input id="name" type="text" maxlength="64" placeholder="Feeverage" required></label>
+              <label class="f" for="symbol">Ticker <input id="symbol" type="text" maxlength="16" placeholder="FEEV" required></label>
+            </div>
+            <div class="logo-drop">
+              <span class="prev" id="logoPrev"></span>
+              <label class="f" for="logo" style="flex:1">Logo URL <small>Direct link to a square image (png, jpg, gif)</small>
+                <input id="logo" type="url" maxlength="512" placeholder="https://…/logo.png"></label>
+            </div>
+            <label class="f" for="desc">Description <small>Your strategy line is added at the end automatically</small>
+              <textarea id="desc" maxlength="1900" placeholder="Every trade feeds one leveraged position on Hyperliquid."></textarea></label>
+            <div class="row">
+              <label class="f" for="x">X / Twitter <input id="x" type="url" maxlength="256" placeholder="https://x.com/…"></label>
+              <label class="f" for="tg">Telegram <input id="tg" type="url" maxlength="256" placeholder="https://t.me/…"></label>
+            </div>
+            <label class="f" for="web">Website <input id="web" type="url" maxlength="256" placeholder="https://…"></label>
+          </fieldset>
+
+          <fieldset>
+            <legend class="label">Position</legend>
+            <div style="display:grid;gap:8px">
+              <span id="marketLbl" style="font-size:13.5px;font-weight:700">Hyperliquid market</span>
+              <div class="picker" id="markets" role="group" aria-labelledby="marketLbl"></div>
+            </div>
+            <div class="seg" role="group" aria-label="Direction">
+              <button type="button" data-side="long" aria-pressed="true">▲ LONG</button>
+              <button type="button" data-side="short" aria-pressed="false">▼ SHORT</button>
+            </div>
+            <label class="f" for="lev">
+              <span class="lev-read"><span>Leverage</span><span class="num" id="levOut">5×</span></span>
+              <input id="lev" type="range" min="1" max="20" step="1" value="5">
+            </label>
+          </fieldset>
+
+          <fieldset>
+            <legend class="label">Launch</legend>
+            <div class="row">
+              <label class="f" for="buy">Your first buy <small>ETH, required (min 0.0001)</small>
+                <input id="buy" type="number" min="0.0001" step="0.001" value="0.002"></label>
+              <label class="f" for="tax">Extra trade tax <small>%, on top of the base fee, also funds the position</small>
+                <input id="tax" type="number" min="0" max="10" step="0.1" value="0"></label>
+            </div>
+          </fieldset>
+
+          <button class="btn dark" id="launchBtn" type="submit" style="width:100%;padding:17px;font-size:17px">Launch token</button>
+          <div class="status" id="launchStatus" role="status"></div>
+        </form>
+
+        <aside class="panel summary" aria-live="polite">
+          <div>
+            <span class="label muted">Summary</span>
+            <h3 id="sumTitle" style="margin-top:8px">FEEV → 5× long BTC</h3>
+          </div>
+          <div class="fig">
+            <span class="label">Margin / Notional</span>
+            <div class="bar"><i class="y"></i></div>
+            <div class="bar" id="sumBars"></div>
+            <div class="ruler" aria-hidden="true"></div>
+            <div class="row2 label"><span id="figLeft">$1 fees → $5 BTC</span><span id="figRight">5× long</span></div>
+          </div>
+          <dl class="kv">
+            <dt>Launch fee</dt><dd id="sumFee">—</dd>
+            <dt>Your first buy</dt><dd id="sumBuy">—</dd>
+            <dt class="total">You send</dt><dd class="total" id="sumTotal">—</dd>
+          </dl>
+          <dl class="kv">
+            <dt>Every $100 of fees opens</dt><dd id="sumExp">—</dd>
+            <dt>Move to liquidation</dt><dd id="sumLiq">—</dd>
+            <dt><span id="markLbl">BTC</span> mark</dt><dd id="sumMark">—</dd>
+          </dl>
+          <div class="checks" id="checks"></div>
+          <p class="note">Liquidation distance is approximate: the position is cross margin and grows with every deposit, so its average entry moves. Hyperliquid fees and funding come out of the margin.</p>
+        </aside>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <img src="assets/logo-96.png" alt="" width="36" height="36">
+    <span class="label">Robinhood × Hyperliquid</span>
+    <a href="docs.html">Docs</a>
+    <span class="label muted" style="margin-left:auto">Experimental. Leverage can go to zero.</span>
+  </div>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
+<script src="config.js"></script>
+<script type="module" src="launch.js"></script>
+</body>
+</html>

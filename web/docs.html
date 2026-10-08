@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=JetBrains+Mono:wght@400;500;700&display=swap">
 <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body data-page="docs">
 
 <header class="top">
   <div class="wrap">
@@ -22,14 +22,18 @@
       <span>FEEVERAGE</span>
     </a>
     <nav class="links" aria-label="Main">
-      <a href="index.html#launch">Launch</a>
-      <a href="index.html#tokens">Tokens</a>
-      <a href="index.html#stats">Stats</a>
-      <a href="docs.html" aria-current="page">Docs</a>
+      <a href="launch.html" data-page="launch">Launch</a>
+      <a href="tokens.html" data-page="tokens">Tokens</a>
+      <a href="stats.html" data-page="stats">Stats</a>
+      <a href="docs.html" data-page="docs">Docs</a>
     </nav>
-    <a class="btn" href="index.html#launch">Launch app</a>
+    <button class="btn" id="connect" type="button" style="margin-left:auto">Connect</button>
   </div>
 </header>
+
+<div class="ticker" aria-label="Hyperliquid prices">
+  <div class="track" id="ticker"></div>
+</div>
 
 <main class="wrap">
   <div class="docs">
@@ -58,7 +62,7 @@
       <div class="tbl"><table>
         <thead><tr><th>Piece</th><th>Where it lives</th><th>What it does</th></tr></thead>
         <tbody>
-          <tr><td>Token + bonding curve</td><td>Robinhood Chain (4663)</td><td>Price discovery from the first trade. Graduates to a Uniswap v4 pool.</td></tr>
+          <tr><td>Token + bonding curve</td><td>Robinhood Chain</td><td>Price discovery from the first trade. Graduates to a Uniswap v4 pool.</td></tr>
           <tr><td>Fee recipient</td><td>Robinhood Chain</td><td>Receives the creator share of every trade, for every Feeverage token.</td></tr>
           <tr><td>Keeper</td><td>Feeverage server</td><td>Claims fees, bridges ETH → USDC, places orders, publishes stats.</td></tr>
           <tr><td>Position account</td><td>Hyperliquid</td><td>One account per token. Holds the margin and the position.</td></tr>
@@ -147,7 +151,7 @@
       <div class="tbl"><table>
         <thead><tr><th>Contract</th><th>Address</th></tr></thead>
         <tbody>
-          <tr><td>Network</td><td class="mono">Robinhood Chain · chain id 4663</td></tr>
+          <tr><td>Network</td><td class="mono">Robinhood Chain</td></tr>
           <tr><td>Launch router</td><td class="mono"><a href="https://robinhoodchain.blockscout.com/address/0xe33E9E479dF8802cb0866d5d05258bEc4cF62948" target="_blank" rel="noopener">0xe33E9E479dF8802cb0866d5d05258bEc4cF62948</a></td></tr>
           <tr><td>Launch factory</td><td class="mono"><a href="https://robinhoodchain.blockscout.com/address/0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e" target="_blank" rel="noopener">0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e</a></td></tr>
           <tr><td>Fee escrow</td><td class="mono"><a href="https://robinhoodchain.blockscout.com/address/0xd3AFEB2a57f70eF218Aa82451c51B2fb0416Ac9e" target="_blank" rel="noopener">0xd3AFEB2a57f70eF218Aa82451c51B2fb0416Ac9e</a></td></tr>
@@ -188,7 +192,9 @@
   </div>
 </footer>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
 <script src="config.js"></script>
+<script type="module">import { initShell } from "./core.js"; initShell();</script>
 <script>
   // Fill the fee recipient from config and highlight the section in view.
   (function () {

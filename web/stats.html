@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stats · Feeverage</title>
+<meta name="description" content="Launch a token on Robinhood Chain. Its trading fees fund a leveraged Hyperliquid position.">
+<meta name="theme-color" content="#f4f2e8">
+<meta property="og:title" content="Feeverage — your token's fees. Leveraged.">
+<meta property="og:description" content="Launch a token on Robinhood Chain. Its trading fees fund a leveraged Hyperliquid position.">
+<meta property="og:image" content="assets/og-image.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" href="assets/logo-96.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="stats">
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="index.html" aria-label="Feeverage home">
+      <img src="assets/logo-96.png" alt="" width="38" height="38">
+      <span>FEEVERAGE</span>
+    </a>
+    <nav class="links" aria-label="Main">
+      <a href="launch.html" data-page="launch">Launch</a>
+      <a href="tokens.html" data-page="tokens">Tokens</a>
+      <a href="stats.html" data-page="stats">Stats</a>
+      <a href="docs.html" data-page="docs">Docs</a>
+    </nav>
+    <button class="btn" id="connect" type="button" style="margin-left:auto">Connect</button>
+  </div>
+</header>
+
+<div class="ticker" aria-label="Hyperliquid prices">
+  <div class="track" id="ticker"></div>
+</div>
+
+<main>
+  <div class="wrap">
+    <div class="banner-note" id="setupNote" hidden></div>
+    <section class="page-head" id="stats">
+      <div class="sec-head">
+        <div><span class="label muted">Protocol</span><h1 class="echo-h" style="font-size:clamp(36px,5.6vw,66px);text-transform:uppercase">Stats</h1></div>
+        <span class="label muted" id="statsTime"></span>
+      </div>
+      <div class="stats" role="list">
+        <div class="stat hl" role="listitem"><span class="label">Tokens launched</span><span class="v" data-stat="tokens">0</span><span class="s">on Robinhood Chain</span></div>
+        <div class="stat" role="listitem"><span class="label">Fees routed</span><span class="v" data-stat="feesUsd">$0.00</span><span class="s" data-stat-sub="feesEth">0.0000 ETH</span></div>
+        <div class="stat" role="listitem"><span class="label">Margin deployed</span><span class="v" data-stat="equityUsd">$0.00</span><span class="s">USDC on Hyperliquid</span></div>
+        <div class="stat" role="listitem"><span class="label">Open notional</span><span class="v" data-stat="notionalUsd">$0.00</span><span class="s">across all positions</span></div>
+        <div class="stat" role="listitem"><span class="label">Unrealized PnL</span><span class="v" data-stat="pnlUsd">$0.00</span><span class="s">mark-to-market</span></div>
+      </div>
+      <div class="stamp"><span class="label muted" id="statsSource">Loading…</span></div>
+    </section>
+
+    <section class="block" style="padding-top:56px">
+      <div class="split">
+        <div class="panel" style="display:grid;gap:14px">
+          <span class="label">Long / Short</span>
+          <div class="lsbar" aria-hidden="true"><i class="l" id="lsL" style="width:50%"></i><i class="s" id="lsS" style="width:50%"></i></div>
+          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><span class="label" id="lsLabel">0 long · 0 short</span><span class="label muted" id="openLabel"></span></div>
+        </div>
+        <div class="panel" style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div style="display:grid;gap:8px"><span class="label">Avg. leverage</span><span class="v" style="font:900 40px/1 var(--f-display);font-stretch:112%" id="avgLev">0×</span></div>
+          <div style="display:grid;gap:8px"><span class="label">Graduated</span><span class="v" style="font:900 40px/1 var(--f-display);font-stretch:112%" id="gradN">0</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" style="padding-top:40px">
+      <div class="sec-head"><div><span class="label muted">Hyperliquid</span><h2 class="echo-h">By market</h2></div></div>
+      <div class="tbl"><table>
+        <thead><tr><th>Market</th><th>Mark</th><th>Tokens</th><th>Fees routed</th><th>Notional</th><th>uPnL</th></tr></thead>
+        <tbody id="byMarket"></tbody>
+      </table></div>
+    </section>
+
+    <section class="block" style="padding-top:40px">
+      <div class="split">
+        <div><div class="sec-head"><div><span class="label muted">Leaderboard</span><h2 class="echo-h" style="font-size:clamp(28px,4vw,42px)">Top fees</h2></div></div><div class="lb" id="lbFees"></div></div>
+        <div><div class="sec-head"><div><span class="label muted">Leaderboard</span><h2 class="echo-h" style="font-size:clamp(28px,4vw,42px)">Top PnL</h2></div></div><div class="lb" id="lbPnl"></div></div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <img src="assets/logo-96.png" alt="" width="36" height="36">
+    <span class="label">Robinhood × Hyperliquid</span>
+    <a href="docs.html">Docs</a>
+    <span class="label muted" style="margin-left:auto">Experimental. Leverage can go to zero.</span>
+  </div>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
+<script src="config.js"></script>
+<script type="module" src="stats.js"></script>
+</body>
+</html>

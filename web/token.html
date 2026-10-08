@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Token · Feeverage</title>
+<meta name="description" content="Launch a token on Robinhood Chain. Its trading fees fund a leveraged Hyperliquid position.">
+<meta name="theme-color" content="#f4f2e8">
+<meta property="og:title" content="Feeverage — your token's fees. Leveraged.">
+<meta property="og:description" content="Launch a token on Robinhood Chain. Its trading fees fund a leveraged Hyperliquid position.">
+<meta property="og:image" content="assets/og-image.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" href="assets/logo-96.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="tokens">
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="index.html" aria-label="Feeverage home">
+      <img src="assets/logo-96.png" alt="" width="38" height="38">
+      <span>FEEVERAGE</span>
+    </a>
+    <nav class="links" aria-label="Main">
+      <a href="launch.html" data-page="launch">Launch</a>
+      <a href="tokens.html" data-page="tokens">Tokens</a>
+      <a href="stats.html" data-page="stats">Stats</a>
+      <a href="docs.html" data-page="docs">Docs</a>
+    </nav>
+    <button class="btn" id="connect" type="button" style="margin-left:auto">Connect</button>
+  </div>
+</header>
+
+<div class="ticker" aria-label="Hyperliquid prices">
+  <div class="track" id="ticker"></div>
+</div>
+
+<main>
+  <div class="wrap">
+    <div class="banner-note" id="setupNote" hidden></div>
+    <section class="page-head">
+      <a class="label" href="tokens.html">← All tokens</a>
+      <div class="empty" id="missing" hidden style="margin-top:22px"><h3>Token not found</h3><p class="muted" style="margin-top:8px">It may still be loading, or it was not launched through Feeverage.</p><p style="margin-top:16px"><a class="btn" href="tokens.html">Browse tokens</a></p></div>
+      <div id="page">
+        <div class="tok-hero" id="hero" style="margin-top:22px"><span class="ph">…</span><div><h1>Loading…</h1></div></div>
+        <div class="tok-grid">
+          <div style="display:grid;gap:24px;min-width:0">
+            <dl class="mstats" id="mstats" style="margin:0"></dl>
+            <div class="panel" style="display:grid;gap:10px">
+              <span class="label">Bonding curve</span>
+              <div style="display:flex;height:14px;border:2.5px solid var(--ink)"><i id="curveBar" style="display:block;width:0;background:var(--yellow);transition:width .6s"></i></div>
+              <span class="label muted" id="curveText"></span>
+            </div>
+            <div class="panel"><span class="label">About</span><p class="desc" id="desc" style="margin-top:10px"></p></div>
+          </div>
+          <aside class="panel" style="display:grid;gap:14px">
+            <span class="label">Trade</span>
+            <div id="trade" style="display:grid;gap:14px">
+              <div class="seg" role="group" aria-label="Trade side"><button type="button" data-t="buy" aria-pressed="true">BUY</button><button type="button" data-t="sell" aria-pressed="false">SELL</button></div>
+              <label class="f" for="tAmt"><span id="tAmtLbl">Pay (ETH)</span><input id="tAmt" type="number" min="0" step="0.001" placeholder="0.001"></label>
+              <div class="label muted" id="tQuote">Enter an amount</div>
+              <button class="btn dark" id="tGo" type="button" style="width:100%">Buy</button>
+            </div>
+            <p class="note" id="gradNote" hidden>This token graduated and now trades on a Uniswap v4 pool on Robinhood Chain. Use any Robinhood Chain swap app with the contract address.</p>
+            <button class="btn ghost" id="push" type="button" hidden>Push fees to the position</button>
+            <div class="status" id="tStatus"></div>
+            <dl class="kv" id="links"></dl>
+          </aside>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <img src="assets/logo-96.png" alt="" width="36" height="36">
+    <span class="label">Robinhood × Hyperliquid</span>
+    <a href="docs.html">Docs</a>
+    <span class="label muted" style="margin-left:auto">Experimental. Leverage can go to zero.</span>
+  </div>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
+<script src="config.js"></script>
+<script type="module" src="token.js"></script>
+</body>
+</html>

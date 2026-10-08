@@ -1,7 +1,13 @@
 // Wallet layer: Privy (email, socials, MetaMask, Rabby, WalletConnect, embedded wallets)
 // mounted from esm.sh with no build step. If Privy cannot load, falls back to an
 // injected wallet (window.ethereum).
-const C = window.FEEVERAGE_CONFIG;
+const C = {
+  chainId: 4663,
+  rpc: "https://rpc.mainnet.chain.robinhood.com",
+  explorer: "https://robinhoodchain.blockscout.com",
+  privyAppId: "",
+  ...(window.FEEVERAGE_CONFIG || {}),
+};
 const listeners = new Set();
 let state = { ready: false, mode: "loading", authenticated: false, address: null, error: null };
 let privy = null; // { login, logout, wallets }
