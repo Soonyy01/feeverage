@@ -25,9 +25,76 @@ document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("clic
   update();
 }));
 ["lev", "buy", "symbol", "tax"].forEach((id) => $(id).addEventListener("input", update));
-$("logo").addEventListener("input", () => {
-  const u = $("logo").value.trim();
-  $("logoPrev").style.backgroundImage = /^https?:\/\//.test(u) ? `url("${u.replace(/"/g, "")}")` : "";
+// ------------------------------------------------------------------ logo: drop or pick an image
+// The image is squared to 512×512 in the browser, uploaded to the site's own storage
+// (/api/upload), and the returned public URL is what goes on-chain.
+let uploading = null;
+const setLogo = (url) => {
+  $("logo").value = url;
+  $("logoPrev").style.backgroundImage = url ? `url("${url.replace(/"/g, "")}")` : "";
+  $("logoPrev").classList.toggle("has", Boolean(url));
+};
+const dropState = (txt, cls = "") => { $("dropState").textContent = txt; $("dropState").className = cls || "muted"; };
+
+async function squareImage(file) {
+  if (file.type === "image/gif") return file; // keep animation
+  const img = await createImageBitmap(file);
+  const side = Math.min(img.width, img.height), out = Math.min(512, side);
+  const c = document.createElement("canvas");
+  c.width = c.height = out;
+  c.getContext("2d").drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, out, out);
+  const blob = await new Promise((r) => c.toBlob(r, "image/webp", 0.9));
+  return blob && blob.type === "image/webp" ? blob : await new Promise((r) => c.toBlob(r, "image/png"));
+}
+
+async function useFile(file) {
+  if (!file || !/^image\/(png|jpeg|webp|gif)$/.test(file.type)) return dropState(t("l.logo.err") + " · png, jpg, webp, gif", "err");
+  const local = URL.createObjectURL(file);
+  $("logoPrev").style.backgroundImage = `url("${local}")`;
+  $("logoPrev").classList.add("has");
+  $("logo").value = "";
+  dropState(t("l.logo.up"));
+  uploading = (async () => {
+    try {
+      const body = await squareImage(file);
+      if (body.size > 1024 * 1024) throw new Error("max 1 MB");
+      const r = await fetch("api/upload", { method: "POST", headers: { "content-type": body.type }, body });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.url) throw new Error(j.error || `HTTP ${r.status}`);
+      $("logo").value = j.url; // keep the local preview; the URL goes on-chain
+      dropState(`${t("l.logo.ok")} ✓ · ${t("l.logo.change")}`, "ok");
+    } catch (e) {
+      setLogo("");
+      dropState(`${t("l.logo.err")}: ${e.message}`, "err");
+    } finally {
+      uploading = null;
+    }
+  })();
+}
+
+$("logoFile").addEventListener("change", (e) => useFile(e.target.files[0]));
+const drop = $("drop");
+["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", (e) => useFile(e.dataTransfer.files[0]));
+addEventListener("paste", (e) => {
+  const f = [...(e.clipboardData?.files ?? [])].find((x) => x.type.startsWith("image/"));
+  if (f && !$("drop").hidden) useFile(f);
+});
+
+// Optional: paste a link instead of uploading.
+let linkMode = false;
+$("logoMode").addEventListener("click", () => {
+  linkMode = !linkMode;
+  $("drop").hidden = linkMode;
+  $("logoUrl").hidden = !linkMode;
+  $("logoMode").textContent = linkMode ? t("l.logo.file") : t("l.logo.link");
+  setLogo(linkMode ? $("logoUrl").value.trim() : "");
+  dropState("");
+});
+$("logoUrl").addEventListener("input", () => {
+  const u = $("logoUrl").value.trim();
+  setLogo(/^https?:\/\//.test(u) ? u : "");
 });
 
 function update() {
@@ -103,6 +170,10 @@ $("launchForm").addEventListener("submit", async (ev) => {
   if (!name || !symbol) return setStatus(t("l.e.name"), "err");
   if (buyEth < 0.0001) return setStatus(t("l.e.buy"), "err");
 
+  if (uploading) {
+    setStatus(t("l.logo.wait"));
+    await uploading;
+  }
   const btn = $("launchBtn");
   btn.disabled = true;
   try {

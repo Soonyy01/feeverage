@@ -54,10 +54,16 @@
               <label class="f" for="name"><span data-i18n="l.name">Name</span> <input id="name" type="text" maxlength="64" placeholder="Feeverage" required></label>
               <label class="f" for="symbol"><span data-i18n="l.ticker">Ticker</span> <input id="symbol" type="text" maxlength="16" placeholder="FEEV" required></label>
             </div>
-            <div class="logo-drop">
-              <span class="prev" id="logoPrev"></span>
-              <label class="f" for="logo" style="flex:1"><span data-i18n="l.logo">Logo URL</span> <small data-i18n="l.logo.s"></small>
-                <input id="logo" type="url" maxlength="512" placeholder="https://…/logo.png"></label>
+            <div style="display:grid;gap:8px">
+              <span style="font-size:13.5px;font-weight:700" data-i18n="l.logo">Logo</span>
+              <label class="drop" id="drop" for="logoFile">
+                <span class="prev" id="logoPrev"></span>
+                <span class="drop-text"><b id="dropTitle" data-i18n="l.logo.s">Drop an image here or tap to choose</b><small id="dropState" class="muted"></small></span>
+                <input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+              </label>
+              <input id="logo" type="hidden">
+              <input id="logoUrl" type="url" maxlength="512" placeholder="https://…/logo.png" hidden>
+              <button class="linkish" id="logoMode" type="button" data-i18n="l.logo.link">Use an image link instead</button>
             </div>
             <label class="f" for="desc"><span data-i18n="l.desc">Description</span> <small data-i18n="l.desc.s"></small>
               <textarea id="desc" maxlength="1900" data-i18n-ph="l.desc.ph"></textarea></label>

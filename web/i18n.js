@@ -71,7 +71,7 @@ const D = {
 
     "l.kicker": "New token", "l.title": "Launch",
     "l.token": "Token", "l.position": "Position", "l.launch": "Launch",
-    "l.name": "Name", "l.ticker": "Ticker", "l.logo": "Logo URL", "l.logo.s": "Direct link to a square image (png, jpg, gif)",
+    "l.name": "Name", "l.ticker": "Ticker", "l.logo": "Logo", "l.logo.s": "Drop an image here or tap to choose · png, jpg, webp, gif", "l.logo.up": "Uploading…", "l.logo.ok": "Logo ready", "l.logo.err": "Upload failed", "l.logo.link": "Use an image link instead", "l.logo.file": "Use an image file instead", "l.logo.wait": "Wait for the logo to finish uploading.", "l.logo.change": "Change",
     "l.desc": "Description", "l.desc.s": "Your strategy line is added at the end automatically",
     "l.desc.ph": "Every trade feeds one leveraged position on Hyperliquid.",
     "l.web": "Website", "l.market": "Hyperliquid market", "l.lev": "Leverage",
@@ -176,7 +176,7 @@ const D = {
 
     "l.kicker": "新代币", "l.title": "发射",
     "l.token": "代币", "l.position": "仓位", "l.launch": "发射",
-    "l.name": "名称", "l.ticker": "代码", "l.logo": "Logo 链接", "l.logo.s": "方形图片的直链（png、jpg、gif）",
+    "l.name": "名称", "l.ticker": "代码", "l.logo": "Logo", "l.logo.s": "把图片拖到这里或点击选择 · png、jpg、webp、gif", "l.logo.up": "上传中…", "l.logo.ok": "Logo 已就绪", "l.logo.err": "上传失败", "l.logo.link": "改用图片链接", "l.logo.file": "改用图片文件", "l.logo.wait": "请等待 logo 上传完成。", "l.logo.change": "更换",
     "l.desc": "简介", "l.desc.s": "策略说明会自动添加在末尾",
     "l.desc.ph": "每一笔交易都在为 Hyperliquid 上的一个杠杆仓位注资。",
     "l.web": "网站", "l.market": "Hyperliquid 市场", "l.lev": "杠杆",
