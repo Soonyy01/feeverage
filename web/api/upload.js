@@ -1,29 +1,68 @@
-// Stores a token logo in Vercel Blob and returns its public URL.
-// Needs a Blob store connected to this Vercel project (Storage → Blob → Connect),
-// which sets BLOB_READ_WRITE_TOKEN automatically.
-import { put, del } from "@vercel/blob";
+// Stores a token logo and returns a public, permanent image URL.
+// Works with zero setup: it uses Vercel Blob when a Blob store is connected
+// (BLOB_READ_WRITE_TOKEN), and otherwise free public image hosts.
+// Open /api/upload in a browser to see which storage works.
 
 const TYPES = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" };
 const MAX = 1024 * 1024; // 1 MB
 
+async function viaBlob(buf, type) {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) throw new Error("no Blob store connected");
+  const { put } = await import("@vercel/blob");
+  const b = await put(`logos/logo.${TYPES[type]}`, buf, { access: "public", contentType: type, addRandomSuffix: true });
+  return b.url;
+}
+
+async function viaCatbox(buf, type) {
+  const fd = new FormData();
+  fd.append("reqtype", "fileupload");
+  fd.append("fileToUpload", new Blob([buf], { type }), `logo.${TYPES[type]}`);
+  const r = await fetch("https://catbox.moe/user/api.php", { method: "POST", body: fd, signal: AbortSignal.timeout(8000) });
+  const txt = (await r.text()).trim();
+  if (!r.ok || !/^https:\/\/files\.catbox\.moe\/\S+$/.test(txt)) throw new Error(`catbox: ${txt.slice(0, 80) || r.status}`);
+  return txt;
+}
+
+async function viaFreeimage(buf, type) {
+  const fd = new FormData();
+  fd.append("key", "6d207e02198a847aa98d0a2a901485a5"); // public API key from freeimage.host docs
+  fd.append("action", "upload");
+  fd.append("format", "json");
+  fd.append("source", new Blob([buf], { type }), `logo.${TYPES[type]}`);
+  const r = await fetch("https://freeimage.host/api/1/upload", { method: "POST", body: fd, signal: AbortSignal.timeout(8000) });
+  const j = await r.json().catch(() => ({}));
+  const url = j?.image?.url;
+  if (!r.ok || !/^https:\/\//.test(url || "")) throw new Error(`freeimage: ${j?.error?.message || r.status}`);
+  return url;
+}
+
+const HOSTS = [["blob", viaBlob], ["catbox", viaCatbox], ["freeimage", viaFreeimage]];
+
+async function store(buf, type) {
+  const errors = [];
+  for (const [name, fn] of HOSTS) {
+    try {
+      return { url: await fn(buf, type), host: name };
+    } catch (e) {
+      errors.push(`${name}: ${e?.message || e}`);
+    }
+  }
+  throw new Error(errors.join(" | "));
+}
+
+// 1×1 transparent PNG used by the GET check.
+const DOT = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
+
 export default async function handler(req, res) {
   res.setHeader("content-type", "application/json");
-  // Open /api/upload in a browser to check whether storage is connected.
+  res.setHeader("cache-control", "no-store");
+
   if (req.method === "GET") {
-    const env = {
-      BLOB_READ_WRITE_TOKEN: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
-      BLOB_STORE_ID: Boolean(process.env.BLOB_STORE_ID),
-      VERCEL_OIDC_TOKEN: Boolean(process.env.VERCEL_OIDC_TOKEN),
-    };
-    let test;
-    try {
-      const b = await put("logos/_check.txt", "ok", { access: "public", addRandomSuffix: true });
-      await del(b.url).catch(() => {});
-      test = "OK - upload works";
-    } catch (e) {
-      test = "FAILED - " + (e?.message || e);
+    const out = {};
+    for (const [name, fn] of HOSTS) {
+      try { out[name] = "OK " + (await fn(DOT, "image/png")); } catch (e) { out[name] = "FAILED " + (e?.message || e); }
     }
-    return res.end(JSON.stringify({ env, test }, null, 2));
+    return res.end(JSON.stringify(out, null, 2));
   }
   if (req.method !== "POST") {
     res.statusCode = 405;
@@ -49,14 +88,9 @@ export default async function handler(req, res) {
     return res.end(JSON.stringify({ error: "Empty file" }));
   }
   try {
-    const blob = await put(`logos/logo.${TYPES[type]}`, Buffer.concat(chunks), {
-      access: "public",
-      contentType: type,
-      addRandomSuffix: true,
-    });
-    res.end(JSON.stringify({ url: blob.url }));
+    res.end(JSON.stringify(await store(Buffer.concat(chunks), type)));
   } catch (e) {
-    res.statusCode = 500;
+    res.statusCode = 502;
     res.end(JSON.stringify({ error: String(e?.message || e) }));
   }
 }
