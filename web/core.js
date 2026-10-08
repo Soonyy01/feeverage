@@ -408,7 +408,30 @@ async function pool(items, n, fn) {
   }));
 }
 
+// The site's own server does the discovery (fast, and works on networks that filter the chain).
+async function fromServer() {
+  if (typeof location === "undefined" || !/^https?:/.test(location.protocol) || !isAddr(C.feeRecipient)) return null;
+  try {
+    const q = new URLSearchParams({ fee: C.feeRecipient, from: String(Number(C.startBlock) || 0) });
+    const r = await fetch(`api/tokens?${q}`, { signal: AbortSignal.timeout(55000) });
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (!Array.isArray(j.tokens)) return null;
+    const out = [];
+    for (const x of j.tokens) {
+      const st = parseStrategy(x.description || "");
+      if (st) out.push({ ...x, socials: x.socials ?? {}, ...st, feesEth: null, pendingEth: null });
+    }
+    await addCurveFees(out).catch(() => {});
+    return out;
+  } catch {
+    return null;
+  }
+}
+
 async function fromChain() {
+  const srv = await fromServer();
+  if (srv) return srv;
   const latest = await provider.getBlockNumber();
   const start = Number(C.startBlock) || Math.max(0, latest - 5_000_000);
   const found = new Map();
