@@ -25,10 +25,11 @@ document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("clic
   update();
 }));
 ["lev", "buy", "symbol", "tax"].forEach((id) => $(id).addEventListener("input", update));
-// ------------------------------------------------------------------ logo: drop or pick an image
-// The image is squared to 512×512 in the browser, uploaded to the site's own storage
-// (/api/upload), and the returned public URL is what goes on-chain.
-let uploading = null;
+// ------------------------------------------------------------------ logo: pick an image from the gallery
+// The image is squared and shrunk in the browser right away (no upload, nothing to wait for).
+// At launch it is stored permanently: in the site's Blob storage when that is connected,
+// otherwise on Robinhood Chain itself (one small extra transaction), served by /api/logo.
+let logoBlob = null;
 const setLogo = (url) => {
   $("logo").value = url;
   $("logoPrev").style.backgroundImage = url ? `url("${url.replace(/"/g, "")}")` : "";
@@ -36,45 +37,59 @@ const setLogo = (url) => {
 };
 const dropState = (txt, cls = "") => { $("dropState").textContent = txt; $("dropState").className = cls || "muted"; };
 
-async function squareImage(file) {
-  if (file.type === "image/gif") return file; // keep animation
+const LOGO_MAX = 16 * 1024; // keeps the on-chain copy cheap
+async function shrink(file) {
+  if (file.type === "image/gif" && file.size <= LOGO_MAX) return file; // small gifs stay animated
   const img = await createImageBitmap(file);
-  const side = Math.min(img.width, img.height), out = Math.min(512, side);
-  const c = document.createElement("canvas");
-  c.width = c.height = out;
-  c.getContext("2d").drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, out, out);
-  const blob = await new Promise((r) => c.toBlob(r, "image/webp", 0.9));
-  return blob && blob.type === "image/webp" ? blob : await new Promise((r) => c.toBlob(r, "image/png"));
+  const side = Math.min(img.width, img.height);
+  let last = null;
+  for (const px of [256, 200, 160, 128]) {
+    const c = document.createElement("canvas");
+    c.width = c.height = Math.min(px, side);
+    const g = c.getContext("2d");
+    g.imageSmoothingQuality = "high";
+    g.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, c.width, c.height);
+    for (const q of [0.9, 0.8, 0.7, 0.55, 0.4]) {
+      let b = await new Promise((r) => c.toBlob(r, "image/webp", q));
+      if (!b || b.type !== "image/webp") b = await new Promise((r) => c.toBlob(r, "image/jpeg", q)); // Safari
+      last = b;
+      if (b && b.size <= LOGO_MAX) return b;
+    }
+  }
+  return last;
 }
 
 async function useFile(file) {
-  if (!file || !/^image\/(png|jpeg|webp|gif)$/.test(file.type)) return dropState(t("l.logo.err") + " · png, jpg, webp, gif", "err");
-  const local = URL.createObjectURL(file);
-  $("logoPrev").style.backgroundImage = `url("${local}")`;
-  $("logoPrev").classList.add("has");
-  $("logo").value = "";
-  dropState(t("l.logo.up"));
-  uploading = (async () => {
-    try {
-      const body = await squareImage(file);
-      if (body.size > 1024 * 1024) throw new Error("max 1 MB");
-      const r = await fetch("api/upload", { method: "POST", headers: { "content-type": body.type }, body });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok || !j.url) throw new Error(j.error || `HTTP ${r.status}`);
-      $("logo").value = j.url; // keep the local preview; the URL goes on-chain
-      dropState(`${t("l.logo.ok")} ✓ · ${t("l.logo.change")}`, "ok");
-    } catch (e) {
-      setLogo("");
-      console.warn("logo upload:", e.message);
-      dropState(`${t("l.logo.err")} · ${t("l.logo.link")}`, "err");
-      const why = document.createElement("small");
-      why.style.cssText = "display:block;opacity:.7;font-size:11px;margin-top:4px;word-break:break-word";
-      why.textContent = String(e.message || e).slice(0, 220);
-      $("dropState").append(why);
-    } finally {
-      uploading = null;
-    }
-  })();
+  if (!file || !/^image\/(png|jpeg|webp|gif)$/.test(file.type)) return dropState("png, jpg, webp, gif", "err");
+  try {
+    dropState("…");
+    logoBlob = await shrink(file);
+    $("logo").value = "";
+    $("logoPrev").style.backgroundImage = `url("${URL.createObjectURL(logoBlob)}")`;
+    $("logoPrev").classList.add("has");
+    dropState(`${t("l.logo.ok")} ✓ · ${t("l.logo.change")}`, "ok");
+  } catch (e) {
+    logoBlob = null;
+    dropState(String(e.message || e), "err");
+  }
+}
+
+// Turns the picked image into a permanent public URL. Called only when launching.
+const MIME = { "image/png": 1, "image/jpeg": 2, "image/webp": 3, "image/gif": 4 };
+async function storeLogo(signer, me) {
+  // 1) Blob storage, if the site has it (free, instant).
+  try {
+    const r = await fetch("api/upload", { method: "POST", headers: { "content-type": logoBlob.type }, body: logoBlob, signal: AbortSignal.timeout(15000) });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.url) return j.url;
+  } catch {}
+  // 2) On-chain: the image bytes ride in a 0-ETH transaction to yourself.
+  setStatus(t("l.s.logo"));
+  const bytes = new Uint8Array(await logoBlob.arrayBuffer());
+  const data = E.concat([E.toUtf8Bytes("FEEVLOGO"), new Uint8Array([MIME[logoBlob.type] ?? 3]), bytes]);
+  const tx = await signer.sendTransaction({ to: me, value: 0n, data });
+  await tx.wait();
+  return `${location.origin}/api/logo?tx=${tx.hash}`;
 }
 
 $("logoFile").addEventListener("change", (e) => useFile(e.target.files[0]));
@@ -95,6 +110,7 @@ $("logoMode").addEventListener("click", () => {
   $("logoUrl").hidden = !linkMode;
   $("logoMode").textContent = linkMode ? t("l.logo.file") : t("l.logo.link");
   setLogo(linkMode ? $("logoUrl").value.trim() : "");
+  if (!linkMode) logoBlob = null;
   dropState("");
 });
 $("logoUrl").addEventListener("input", () => {
@@ -175,10 +191,6 @@ $("launchForm").addEventListener("submit", async (ev) => {
   if (!name || !symbol) return setStatus(t("l.e.name"), "err");
   if (buyEth < 0.0001) return setStatus(t("l.e.buy"), "err");
 
-  if (uploading) {
-    setStatus(t("l.logo.wait"));
-    await uploading;
-  }
   const btn = $("launchBtn");
   btn.disabled = true;
   try {
@@ -188,6 +200,7 @@ $("launchForm").addEventListener("submit", async (ev) => {
     const f = new E.Contract(C.factory, FACTORY_ABI, provider);
     const [fee, allowed, econ] = await Promise.all([f.launchFee(), f.canLaunch(me), f.previewLaunchEconomics(C.launchConfigId, ZERO)]);
     if (!allowed) throw new Error(t("l.c.gate.x"));
+    if (!linkMode && logoBlob && !$("logo").value) $("logo").value = await storeLogo(signer, me);
 
     const taxBps = Math.round(Math.min(Number(chain.maxTaxBps) / 100, Math.max(0, Number($("tax").value) || 0)) * 100);
     const strat = { market: form.market, isLong: form.isLong, leverage: form.lev };

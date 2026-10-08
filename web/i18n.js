@@ -89,7 +89,7 @@ const D = {
     "l.open": "Launching open", "l.gated": "Launching gated", "l.unreach": "Chain unreachable",
     "l.e.name": "Name and ticker are required.", "l.e.buy": "The first buy must be at least 0.0001 ETH.",
     "l.e.fee": "Set feeRecipient in config.js before launching.", "l.e.long": "Description is too long.",
-    "l.s.conn": "Connecting wallet…", "l.s.sim": "Simulating…", "l.s.confirm": "Confirm the launch in your wallet…",
+    "l.s.logo": "Saving your logo on-chain: confirm in your wallet (1 of 2)…", "l.s.conn": "Connecting wallet…", "l.s.sim": "Simulating…", "l.s.confirm": "Confirm the launch in your wallet…",
     "l.s.sent": "Sent. Waiting for the block…", "l.s.live": "is live.", "l.s.open": "Open the token page →",
 
     "t.back": "← All tokens", "t.missing": "Token not found", "t.missing.p": "It may still be loading, or it was not launched through Feeverage.",
@@ -194,7 +194,7 @@ const D = {
     "l.open": "开放发射", "l.gated": "发射受限", "l.unreach": "无法连接链",
     "l.e.name": "名称和代码为必填项。", "l.e.buy": "首笔买入至少 0.0001 ETH。",
     "l.e.fee": "发射前请在 config.js 中设置 feeRecipient。", "l.e.long": "简介太长。",
-    "l.s.conn": "正在连接钱包…", "l.s.sim": "正在模拟交易…", "l.s.confirm": "请在钱包中确认发射…",
+    "l.s.logo": "正在把 logo 保存到链上：请在钱包中确认（第 1 步，共 2 步）…", "l.s.conn": "正在连接钱包…", "l.s.sim": "正在模拟交易…", "l.s.confirm": "请在钱包中确认发射…",
     "l.s.sent": "已发送，等待出块…", "l.s.live": "已上线。", "l.s.open": "打开代币页面 →",
 
     "t.back": "← 全部代币", "t.missing": "未找到代币", "t.missing.p": "可能仍在加载，或者该代币不是通过 Feeverage 发射的。",
