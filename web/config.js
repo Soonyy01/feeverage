@@ -1,0 +1,31 @@
+// Everything you need to edit lives here.
+window.FEEVERAGE_CONFIG = {
+  // Privy app id (dashboard.privy.io). Add your site's domain under
+  // "Allowed origins" in the Privy dashboard, or login will be refused.
+  privyAppId: "cmuyesiuv002x0ckuxoisx73f",
+
+  // Wallet that receives every token's creator fees: the keeper's OPERATOR address.
+  // For a quick test you can put your own wallet here.
+  feeRecipient: "",
+
+  // Public URL of the keeper's status API, e.g. "https://keeper.example.com".
+  // Leave empty to read launches straight from the chain (slower).
+  keeperApi: "",
+
+  // Robinhood Chain
+  chainId: 4663,
+  rpc: "https://rpc.mainnet.chain.robinhood.com",
+  explorer: "https://robinhoodchain.blockscout.com",
+
+  // Launchpad contracts on Robinhood Chain
+  router: "0xe33E9E479dF8802cb0866d5d05258bEc4cF62948",
+  factory: "0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e",
+  launchConfigId: 0,
+  // First block to scan when there is no keeper API (set it to the day you go live).
+  startBlock: 0,
+
+  // Hyperliquid
+  hlInfo: "https://api.hyperliquid.xyz/info",
+  markets: ["BTC", "ETH", "HYPE", "SOL", "XRP", "DOGE"],
+  maxLeverage: 20,
+};

@@ -1,0 +1,18 @@
+{
+  "name": "feeverage-keeper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Collects Pons creator fees on Robinhood Chain, bridges them to Hyperliquid and opens each token's leveraged position.",
+  "type": "module",
+  "engines": { "node": ">=22.12" },
+  "scripts": {
+    "start": "node --env-file=.env src/index.js",
+    "once": "node --env-file=.env src/index.js --once",
+    "check": "node --env-file=.env src/index.js --check",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@nktkas/hyperliquid": "^0.33.3",
+    "viem": "^2.38.0"
+  }
+}
