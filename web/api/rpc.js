@@ -1,5 +1,6 @@
-// Read-only Robinhood Chain RPC proxy for visitors whose network or browser can't reach
-// the public endpoints directly. Wallet transactions never go through here.
+// Robinhood Chain RPC proxy for visitors (and the keeper) whose network can't reach the
+// public endpoints directly. It only relays: signed transactions are signed elsewhere,
+// no key ever touches this server.
 const UPSTREAMS = [
   process.env.ROBINHOOD_RPC,
   "https://rpc.mainnet.chain.robinhood.com",
@@ -10,7 +11,7 @@ const ALLOWED = new Set([
   "eth_chainId", "net_version", "eth_blockNumber", "eth_call", "eth_getLogs", "eth_getBalance",
   "eth_getCode", "eth_getStorageAt", "eth_estimateGas", "eth_gasPrice", "eth_maxPriorityFeePerGas",
   "eth_feeHistory", "eth_getBlockByNumber", "eth_getBlockByHash", "eth_getTransactionByHash",
-  "eth_getTransactionReceipt", "eth_getTransactionCount",
+  "eth_getTransactionReceipt", "eth_getTransactionCount", "eth_sendRawTransaction",
 ]);
 const MAX = 256 * 1024;
 
