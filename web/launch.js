@@ -65,7 +65,8 @@ async function useFile(file) {
       dropState(`${t("l.logo.ok")} ✓ · ${t("l.logo.change")}`, "ok");
     } catch (e) {
       setLogo("");
-      dropState(`${t("l.logo.err")}: ${e.message}`, "err");
+      console.warn("logo upload:", e.message);
+      dropState(`${t("l.logo.err")} · ${t("l.logo.link")}`, "err");
     } finally {
       uploading = null;
     }

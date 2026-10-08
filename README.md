@@ -79,3 +79,13 @@ Lingkungan saya memblokir akses ke Robinhood Chain RPC, Hyperliquid, Privy, dan 
 - Posisi leverage bisa terlikuidasi.
 - Kode belum diaudit.
 - Mengelola dana orang untuk trading leverage bisa masuk ranah regulasi (OJK). Cek dulu sebelum dibuka untuk publik.
+
+## Upload logo (aktifkan sekali di Vercel)
+
+Logo token diupload langsung dari form Launch (drag gambar atau pilih file). Gambar disimpan di **Vercel Blob** lewat `web/api/upload.js`, lalu link-nya ditulis ke token on-chain.
+
+1. Project `feeverage` di Vercel → tab **Storage** → **Create Database** → **Blob** → **Create**.
+2. Hubungkan ke project `feeverage` (semua environment) → **Connect**. Ini otomatis menambahkan `BLOB_READ_WRITE_TOKEN`.
+3. **Deployments** → **Redeploy**.
+
+Maksimal 1 MB, format png/jpg/webp/gif. Gambar otomatis dipotong persegi 512×512.
