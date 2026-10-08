@@ -6,7 +6,7 @@ window.FEEVERAGE_CONFIG = {
 
   // Wallet that receives every token's creator fees: the keeper's OPERATOR address.
   // For a quick test you can put your own wallet here.
-  feeRecipient: "",
+  feeRecipient: "0xc2c2324205a288209ac5d9968a6221f3c8f66d2e",
 
   // Public URL of the keeper's status API, e.g. "https://keeper.example.com".
   // Leave empty to read launches straight from the chain (slower).
