@@ -13,7 +13,7 @@ window.FEEVERAGE_CONFIG = {
   keeperApi: "",
 
   // Your X (Twitter) profile, shown at the bottom of the menu, e.g. "https://x.com/feeverage".
-  xUrl: "",
+  xUrl: "https://x.com/feeverage",
 
   // Fees a token must collect before they are bridged and added to its position (USD).
   // Keep this equal to MIN_BRIDGE_USD in the keeper's .env.
