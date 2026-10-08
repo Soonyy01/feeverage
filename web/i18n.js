@@ -54,7 +54,6 @@ const D = {
     "how.g.topup": "Next top-up", "how.g.topup.d": "Fees waiting on Robinhood Chain. At $12 they are bridged and added to the position.",
     "how.g.liq": "Liquidation", "how.g.liq.d": "Price at which the position is wiped out, and how far away it is right now.",
     "how.g.curve": "Curve", "how.g.curve.d": "How full the bonding curve is. At 100% the token graduates to Uniswap v4.",
-    "how.risk": "Leverage can go to zero. Fees pass through the Feeverage keeper and bridge. Nothing here is financial advice.",
     "how.docs": "Read the full docs →",
 
     "tok.kicker": "All launches", "tok.title": "Tokens",
@@ -69,7 +68,6 @@ const D = {
     "src.keeper": "Live · keeper", "src.chain": "Live from Robinhood Chain", "src.none": "Live data starts with the first launch",
     "src.connecting": "Connecting to Robinhood Chain…",
 
-    "foot.risk": "Experimental. Leverage can go to zero.",
 
     "l.kicker": "New token", "l.title": "Launch",
     "l.token": "Token", "l.position": "Position", "l.launch": "Launch",
@@ -161,7 +159,6 @@ const D = {
     "how.g.topup": "下次加仓", "how.g.topup.d": "在 Robinhood Chain 上等待的手续费。达到 $12 后会跨链并加入仓位。",
     "how.g.liq": "清算", "how.g.liq.d": "仓位被清空的价格，以及当前距离它还有多远。",
     "how.g.curve": "曲线", "how.g.curve.d": "联合曲线的填充进度。达到 100% 时代币毕业进入 Uniswap v4。",
-    "how.risk": "杠杆可能归零。手续费会经过 Feeverage 的 keeper 和跨链桥。本页内容不构成投资建议。",
     "how.docs": "阅读完整文档 →",
 
     "tok.kicker": "全部发射", "tok.title": "代币",
@@ -176,7 +173,6 @@ const D = {
     "src.keeper": "实时 · keeper", "src.chain": "实时读取 Robinhood Chain", "src.none": "首个代币发射后开始显示实时数据",
     "src.connecting": "正在连接 Robinhood Chain…",
 
-    "foot.risk": "实验性产品。杠杆可能归零。",
 
     "l.kicker": "新代币", "l.title": "发射",
     "l.token": "代币", "l.position": "仓位", "l.launch": "发射",
