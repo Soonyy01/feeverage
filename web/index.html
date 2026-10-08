@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Feeverage</title>
+<script>try{var t=localStorage.getItem("feev.theme");if(t)document.documentElement.dataset.theme=t;var l=localStorage.getItem("feev.lang");if(l!=="en"&&l!=="zh")l=(navigator.language||"").toLowerCase().indexOf("zh")===0?"zh":"en";document.documentElement.lang=l;}catch(e){}</script>
 <meta name="description" content="Launch a token on Robinhood Chain. Its trading fees fund a leveraged Hyperliquid position.">
 <meta name="theme-color" content="#f4f2e8">
 <meta property="og:title" content="Feeverage — your token's fees. Leveraged.">
@@ -16,31 +17,25 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=JetBrains+Mono:wght@400;500;700&display=swap">
 <link rel="stylesheet" href="styles.css">
 </head>
-<body data-page="home">
+<body>
 
 <header class="top">
   <div class="wrap">
     <a class="brand" href="index.html" aria-label="Feeverage home">
-      <img src="assets/logo-96.png" alt="" width="38" height="38">
+      <img src="assets/logo-96.png" alt="" width="40" height="40">
       <span>FEEVERAGE</span>
     </a>
-    <nav class="links" aria-label="Main">
-      <a href="launch.html" data-page="launch">Launch</a>
-      <a href="tokens.html" data-page="tokens">Tokens</a>
-      <a href="stats.html" data-page="stats">Stats</a>
-      <a href="docs.html" data-page="docs">Docs</a>
-    </nav>
-    <button class="btn" id="connect" type="button" style="margin-left:auto">Connect</button>
+    <button class="btn menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="menu"><span class="burger" aria-hidden="true"></span><span data-i18n="menu">Menu</span></button>
+    <div class="menu" id="menu" hidden></div>
   </div>
 </header>
 
-<div class="ticker" aria-label="Hyperliquid prices">
+<div class="ticker" aria-label="Live prices">
   <div class="track" id="ticker"></div>
 </div>
 
 <main>
   <div class="wrap">
-    <div class="banner-note" id="setupNote" hidden></div>
     <!-- HERO -->
     <div class="hero">
       <span class="crop tl"></span><span class="crop tr"></span><span class="crop bl"></span><span class="crop br"></span>
@@ -54,65 +49,109 @@
             <span class="layer echo" style="--i:1" aria-hidden="true">Feeverage</span>
             <span class="layer top" aria-hidden="true">Feeverage</span>
           </h1>
-          <div class="strip">Your token's fees. Leveraged.</div>
-          <p class="hero-copy">Launch a token on <strong>Robinhood Chain</strong>. Every trade pays a fee, and every fee is wired into one leveraged <strong>Hyperliquid</strong> position the creator picks at launch. Holders watch it run, or get liquidated, in public.</p>
+          <div class="strip" data-i18n="hero.strip">Your token's fees. Leveraged.</div>
+          <p class="hero-copy" data-i18n-html="hero.copy"></p>
           <div class="ctas">
-            <a class="btn" href="launch.html">Launch a token →</a>
-            <a class="btn ghost" href="tokens.html">Browse tokens</a>
+            <a class="btn" href="launch.html" data-i18n="hero.launch">Launch a token →</a>
+            <a class="btn ghost" href="#tokens" data-i18n="hero.browse">Browse tokens</a>
           </div>
         </div>
-
         <div class="fig-card fig" aria-label="Margin compared with notional exposure">
-          <div class="row2"><span class="label">Margin / Notional</span><span class="label muted" id="heroMarket">BTC</span></div>
-          <span class="label">1× margin</span>
+          <div class="row2"><span class="label" data-i18n="fig.title">Margin / Notional</span><span class="label muted" id="heroMarket">BTC</span></div>
+          <span class="label" data-i18n="fig.margin">1× margin</span>
           <div class="bar"><i class="y"></i></div>
-          <span class="label">Notional</span>
+          <span class="label" data-i18n="fig.notional">Notional</span>
           <div class="bar" id="heroBars"></div>
           <div class="ruler" aria-hidden="true"></div>
           <div class="row2"><span class="big" id="heroLev">5×</span><span class="label" style="align-self:end" id="heroMode">cross · long</span></div>
-          <p class="note">$1 of trading fees becomes <b id="heroNotional">$5</b> of exposure on Hyperliquid.</p>
+          <p class="note" data-i18n-html="fig.copy"></p>
         </div>
       </div>
     </div>
 
-    <section class="block" id="stats" style="padding-top:36px">
+    <!-- STATS -->
+    <section id="stats" style="padding-top:36px">
       <div class="stats" role="list">
-        <div class="stat hl" role="listitem"><span class="label">Tokens launched</span><span class="v" data-stat="tokens">0</span><span class="s">on Robinhood Chain</span></div>
-        <div class="stat" role="listitem"><span class="label">Fees routed</span><span class="v" data-stat="feesUsd">$0.00</span><span class="s" data-stat-sub="feesEth">0.0000 ETH</span></div>
-        <div class="stat" role="listitem"><span class="label">Margin deployed</span><span class="v" data-stat="equityUsd">$0.00</span><span class="s">USDC on Hyperliquid</span></div>
-        <div class="stat" role="listitem"><span class="label">Open notional</span><span class="v" data-stat="notionalUsd">$0.00</span><span class="s">across all positions</span></div>
-        <div class="stat" role="listitem"><span class="label">Unrealized PnL</span><span class="v" data-stat="pnlUsd">$0.00</span><span class="s">mark-to-market</span></div>
+        <div class="stat hl" role="listitem"><span class="label" data-i18n="st.tokens">Tokens launched</span><span class="v" data-stat="tokens">0</span><span class="s" data-i18n="st.tokens.s">on Robinhood Chain</span></div>
+        <div class="stat" role="listitem"><span class="label" data-i18n="st.fees">Fees routed</span><span class="v" data-stat="feesUsd">$0.00</span><span class="s" data-stat-sub="feesEth">0.0000 ETH</span></div>
+        <div class="stat" role="listitem"><span class="label" data-i18n="st.margin">Margin deployed</span><span class="v" data-stat="equityUsd">$0.00</span><span class="s" data-i18n="st.margin.s">USDC on Hyperliquid</span></div>
+        <div class="stat" role="listitem"><span class="label" data-i18n="st.notional">Open notional</span><span class="v" data-stat="notionalUsd">$0.00</span><span class="s" data-i18n="st.notional.s">across all positions</span></div>
+        <div class="stat" role="listitem"><span class="label" data-i18n="st.pnl">Unrealized PnL</span><span class="v" data-stat="pnlUsd">$0.00</span><span class="s" data-i18n="st.pnl.s">live mark-to-market</span></div>
       </div>
-      <div class="stamp"><span class="label muted" id="statsSource">Loading…</span><a class="label" href="stats.html">All stats →</a></div>
+      <div class="lsrow">
+        <span class="label"><span data-i18n="st.long">Long</span> <b id="nLong">0</b></span>
+        <div class="lsbar" aria-hidden="true"><i class="l" id="lsL" style="width:50%"></i><i class="s" id="lsS" style="width:50%"></i></div>
+        <span class="label"><b id="nShort">0</b> <span data-i18n="st.short">Short</span></span>
+      </div>
+      <div class="stamp"><span class="label muted" id="statsSource">…</span></div>
     </section>
 
-    <section class="block">
-      <div class="sec-head latest-head">
-        <div><span class="label muted">Just launched</span><h2 class="echo-h">Latest</h2></div>
-        <a class="btn ghost sm" href="tokens.html">All tokens →</a>
+    <!-- TOKENS -->
+    <section class="block" id="tokens">
+      <div class="sec-head">
+        <div><span class="label muted" data-i18n="tok.kicker">All launches</span><h2 class="echo-h" data-i18n="tok.title">Tokens</h2></div>
       </div>
-      <div class="cards" id="latest"></div>
+      <div class="filters">
+        <div class="line">
+          <input class="input search" id="q" type="search" data-i18n-ph="tok.search" placeholder="Search ticker, name or market" aria-label="Search tokens">
+          <div class="tabs side" role="group" aria-label="Side">
+            <button type="button" data-side="all" aria-pressed="true" data-i18n="tok.all">All</button>
+            <button type="button" data-side="long" aria-pressed="false">▲ <span data-i18n="tok.long">Long</span></button>
+            <button type="button" data-side="short" aria-pressed="false">▼ <span data-i18n="tok.short">Short</span></button>
+          </div>
+        </div>
+        <div class="tabs" id="views" role="group" aria-label="Sort"></div>
+      </div>
+      <div class="cards" id="cards"></div>
     </section>
 
     <!-- HOW -->
     <section class="block" id="how">
       <div class="sec-head">
-        <div><span class="label muted">The machine</span><h2 class="echo-h">How it works</h2></div>
-        <a class="btn ghost sm" href="docs.html">Read the docs</a>
+        <div><span class="label muted" data-i18n="how.kicker">The machine</span><h2 class="echo-h" data-i18n="how.title">How it works</h2></div>
+        <a class="btn ghost sm" href="docs.html" data-i18n="how.docs">Read the full docs →</a>
       </div>
+      <p class="lede" data-i18n="how.lede"></p>
       <div class="steps">
-        <div class="step"><span class="glyph">↑</span><h3>Launch</h3><p>Name it, pick a Hyperliquid market, a side and a leverage. The token goes live on a bonding curve on Robinhood Chain in one transaction.</p></div>
-        <div class="step"><span class="glyph">⇄</span><h3>Trade</h3><p>Every buy and sell pays a fee. The creator share of that fee is routed to Feeverage instead of a wallet.</p></div>
-        <div class="step"><span class="glyph">⤳</span><h3>Bridge</h3><p>The keeper claims the ETH, bridges it to USDC and deposits it into the token's own Hyperliquid account.</p></div>
-        <div class="step"><span class="glyph">×</span><h3>Lever up</h3><p>Each deposit is added to the position at the chosen leverage. Bigger volume, bigger position.</p></div>
+        <div class="step"><span class="glyph">↑</span><h3 data-i18n="how.s1.t">Launch</h3><p data-i18n="how.s1.p"></p></div>
+        <div class="step"><span class="glyph">⇄</span><h3 data-i18n="how.s2.t">Trade</h3><p data-i18n="how.s2.p"></p></div>
+        <div class="step"><span class="glyph">◎</span><h3 data-i18n="how.s3.t">Collect</h3><p data-i18n="how.s3.p"></p></div>
+        <div class="step"><span class="glyph">⤳</span><h3 data-i18n="how.s4.t">Bridge</h3><p data-i18n="how.s4.p"></p></div>
+        <div class="step hl"><span class="glyph">×</span><h3 data-i18n="how.s5.t">Lever up</h3><p data-i18n="how.s5.p"></p></div>
+        <div class="step"><span class="glyph">↗</span><h3 data-i18n="how.s6.t">Graduate</h3><p data-i18n="how.s6.p"></p></div>
       </div>
       <div class="pipe" aria-hidden="true">
         <span class="node">TRADE FEES · ETH</span><span class="lane"></span>
         <span class="node mid">ROBINHOOD → HYPERLIQUID</span><span class="lane"></span>
         <span class="node">POSITION · USDC</span>
       </div>
+      <div class="explain">
+        <div class="panel">
+          <h3 data-i18n="how.ex.t">Example</h3>
+          <p data-i18n-html="how.ex.p"></p>
+          <div class="calc">
+            <span data-i18n="how.ex.r1">Fees bridged</span><span>$100.00</span>
+            <span data-i18n="how.ex.r2">Kept for fees & funding (5%)</span><span>−$5.00</span>
+            <span data-i18n="how.ex.r3">Margin used</span><span>$95.00</span>
+            <span class="tot" data-i18n="how.ex.r4">Position opened (× 5)</span><span class="tot">$475.00 BTC</span>
+            <span data-i18n="how.ex.r5">If BTC rises 10%</span><span class="pos">+$47.50</span>
+            <span data-i18n="how.ex.r6">If BTC falls ~19%</span><span class="neg" data-i18n="how.ex.liq">liquidated</span>
+          </div>
+          <p class="note" style="margin-top:14px" data-i18n="how.risk"></p>
+        </div>
+        <div class="panel">
+          <h3 data-i18n="how.read.t">Reading a token</h3>
+          <dl class="gloss">
+            <dt data-i18n="how.g.strat">Strategy</dt><dd data-i18n="how.g.strat.d"></dd>
+            <dt data-i18n="how.g.pnl">Live PnL</dt><dd data-i18n="how.g.pnl.d"></dd>
+            <dt data-i18n="how.g.funded">Funded</dt><dd data-i18n="how.g.funded.d"></dd>
+            <dt data-i18n="how.g.topup">Next top-up</dt><dd data-i18n="how.g.topup.d"></dd>
+            <dt data-i18n="how.g.liq">Liquidation</dt><dd data-i18n="how.g.liq.d"></dd>
+            <dt data-i18n="how.g.curve">Curve</dt><dd data-i18n="how.g.curve.d"></dd>
+          </dl>
+        </div>
+      </div>
     </section>
-
   </div>
 </main>
 
@@ -120,8 +159,7 @@
   <div class="wrap">
     <img src="assets/logo-96.png" alt="" width="36" height="36">
     <span class="label">Robinhood × Hyperliquid</span>
-    <a href="docs.html">Docs</a>
-    <span class="label muted" style="margin-left:auto">Experimental. Leverage can go to zero.</span>
+    <span class="label muted" style="margin-left:auto" data-i18n="foot.risk">Experimental. Leverage can go to zero.</span>
   </div>
 </footer>
 

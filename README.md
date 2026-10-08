@@ -6,7 +6,7 @@ Website langsung terhubung ke router launchpad di Robinhood Chain. **Tidak perlu
 
 | Folder | Isi |
 |---|---|
-| `web/` | Website (tanpa build step): halaman utama + `docs.html`, wallet Privy, launch langsung ke router, beli/jual token, statistik, ticker harga Hyperliquid |
+| `web/` | Website tanpa build step: halaman depan (hero, stats live, daftar token dengan filter Long/Short dan urutan, cara kerja lengkap), Launch, halaman tiap token (PnL live, indikator kesehatan, beli/jual), Docs EN/ID. Menu di pojok kanan: Launch, Docs, Connect wallet (Privy), bahasa, tema terang/gelap, X |
 | `keeper/` | Bot: mendeteksi token dari website, menghitung fee per token, klaim, bridge ke Hyperliquid, buka posisi, dan menyediakan API `/status.json` untuk statistik website |
 | `contracts/` | **Opsional** (versi lanjutan): kontrak launcher + fee sink per token. Tidak dibutuhkan untuk mode router langsung |
 

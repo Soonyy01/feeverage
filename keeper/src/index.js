@@ -250,6 +250,7 @@ async function buildStatus(ethPrice) {
       equityUsd: hl?.accountValue ?? 0,
       notionalUsd: pos ? Math.abs(Number(pos.positionValue)) : 0,
       pnlUsd: pos ? Number(pos.unrealizedPnl) : 0,
+      szi: pos ? Number(pos.szi) : 0,
       entryPx: pos ? Number(pos.entryPx) : null,
       liqPx: pos?.liquidationPx ? Number(pos.liquidationPx) : null,
     };

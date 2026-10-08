@@ -1,6 +1,6 @@
 import {
   $, C, E, FACTORY_ABI, ROUTER_ABI, ZERO, bars, chain, errMsg, esc, fmt, initShell, isAddr, market,
-  onMarkets, provider, px, readChain, short, store, strategyLine, tokenUrl, wallet,
+  onMarkets, provider, px, readChain, short, store, strategyLine, t, tokenUrl, wallet,
 } from "./core.js";
 
 initShell();
@@ -43,11 +43,11 @@ function update() {
     bars($("sumBars"), form.lev);
     $("sumBars").dataset.lev = String(form.lev);
   }
-  $("figLeft").textContent = `$1 fees → $${form.lev} ${form.market}`;
+  $("figLeft").textContent = `$1 → $${form.lev} ${form.market}`;
   $("figRight").textContent = `${form.lev}× ${side}`;
   $("sumExp").textContent = `$${fmt(100 * 0.95 * form.lev, 0)} ${form.market}`;
   const liq = form.lev === 1 ? (form.isLong ? 99 : 100) : Math.max(0, 100 / form.lev - 1);
-  $("sumLiq").textContent = `≈ ${fmt(liq, 1)}% ${form.isLong ? "down" : "up"}`;
+  $("sumLiq").textContent = `≈ ${fmt(liq, 1)}% ${form.isLong ? t("l.down") : t("l.up")}`;
   $("markLbl").textContent = form.market;
   $("sumMark").dataset.px = form.market;
   $("sumMark").textContent = market[form.market] ? px(market[form.market].px) : "—";
@@ -68,10 +68,10 @@ function update() {
 function renderChecks() {
   const w = wallet.state;
   const rows = [
-    [isAddr(C.feeRecipient), "Fee recipient set", "Set feeRecipient in config.js"],
-    [chain.ok, "Robinhood Chain reachable", "Robinhood Chain not reachable"],
-    [w.authenticated, w.address ? `Wallet ${short(w.address)}` : "Wallet connected", "Connect a wallet"],
-    [chain.canLaunchMe !== false, chain.canLaunchMe ? "Launching allowed for this wallet" : "Launch permission", "Launching is gated for this wallet right now"],
+    [isAddr(C.feeRecipient), t("l.c.fee"), t("l.c.fee.x")],
+    [chain.ok, t("l.c.chain"), t("l.c.chain.x")],
+    [w.authenticated, w.address ? `Wallet ${short(w.address)}` : t("l.c.wallet"), t("l.c.wallet.x")],
+    [chain.canLaunchMe !== false, t("l.c.gate"), t("l.c.gate.x")],
   ];
   $("checks").innerHTML = rows.map(([ok, good, bad]) =>
     `<div><span class="sq ${ok ? "live" : "off"}"></span>${esc(ok ? good : bad)}</div>`).join("");
@@ -87,9 +87,9 @@ async function refreshGate() {
   if (chain.ok) {
     $("tax").max = String(Number(chain.maxTaxBps) / 100);
     const ok = wallet.state.address ? chain.canLaunchMe : chain.launchOpen;
-    $("gate").innerHTML = `<span class="sq ${ok ? "live" : "off"}"></span>${ok ? "Launching open" : "Launching gated"}`;
+    $("gate").innerHTML = `<span class="sq ${ok ? "live" : "off"}"></span>${ok ? t("l.open") : t("l.gated")}`;
   } else {
-    $("gate").innerHTML = `<span class="sq off"></span>Chain unreachable`;
+    $("gate").innerHTML = `<span class="sq off"></span>${t("l.unreach")}`;
   }
   update();
 }
@@ -99,24 +99,24 @@ $("launchForm").addEventListener("submit", async (ev) => {
   const name = $("name").value.trim(), symbol = $("symbol").value.trim().toUpperCase();
   const buyEth = Number($("buy").value) || 0;
   if (!E) return setStatus("ethers did not load. Check your connection and reload.", "err");
-  if (!isAddr(C.feeRecipient)) return setStatus("Set <b>feeRecipient</b> in config.js to the keeper operator address (or your own wallet for a test).", "err");
-  if (!name || !symbol) return setStatus("Name and ticker are required.", "err");
-  if (buyEth < 0.0001) return setStatus("The first buy must be at least 0.0001 ETH.", "err");
+  if (!isAddr(C.feeRecipient)) return setStatus(t("l.e.fee"), "err");
+  if (!name || !symbol) return setStatus(t("l.e.name"), "err");
+  if (buyEth < 0.0001) return setStatus(t("l.e.buy"), "err");
 
   const btn = $("launchBtn");
   btn.disabled = true;
   try {
-    setStatus("Connecting wallet…");
+    setStatus(t("l.s.conn"));
     const signer = await wallet.signer();
     const me = await signer.getAddress();
     const f = new E.Contract(C.factory, FACTORY_ABI, provider);
     const [fee, allowed, econ] = await Promise.all([f.launchFee(), f.canLaunch(me), f.previewLaunchEconomics(C.launchConfigId, ZERO)]);
-    if (!allowed) throw new Error("Launching is gated on Robinhood Chain right now for this wallet.");
+    if (!allowed) throw new Error(t("l.c.gate.x"));
 
     const taxBps = Math.round(Math.min(Number(chain.maxTaxBps) / 100, Math.max(0, Number($("tax").value) || 0)) * 100);
     const strat = { market: form.market, isLong: form.isLong, leverage: form.lev };
     const desc = ($("desc").value.trim() + "\n\n" + strategyLine(strat)).trim();
-    if (new TextEncoder().encode(desc).length > 2048) throw new Error("Description is too long.");
+    if (new TextEncoder().encode(desc).length > 2048) throw new Error(t("l.e.long"));
     const params = [
       name, symbol, $("logo").value.trim(), desc,
       [$("x").value.trim(), $("tg").value.trim(), "", $("web").value.trim(), ""],
@@ -127,11 +127,11 @@ $("launchForm").addEventListener("submit", async (ev) => {
     const router = new E.Contract(C.router, ROUTER_ABI, signer);
     const args = [params, C.launchConfigId, ZERO, quoteIn, 0n, me, [me]];
 
-    setStatus("Simulating…");
+    setStatus(t("l.s.sim"));
     await router.launchAndBuy.staticCall(...args, { value });
-    setStatus("Confirm the launch in your wallet…");
+    setStatus(t("l.s.confirm"));
     const tx = await router.launchAndBuy(...args, { value });
-    setStatus(`Sent. Waiting for the block… <a href="${C.explorer}/tx/${tx.hash}" target="_blank" rel="noopener">view tx</a>`);
+    setStatus(`${t("l.s.sent")} <a href="${C.explorer}/tx/${tx.hash}" target="_blank" rel="noopener">view tx</a>`);
     const rc = await tx.wait();
     const ev2 = rc.logs.map((l) => { try { return f.interface.parseLog(l); } catch { return null; } }).find((x) => x?.name === "TokenLaunched");
     const token = ev2?.args?.token, curve = ev2?.args?.curve;
@@ -140,7 +140,7 @@ $("launchForm").addEventListener("submit", async (ev) => {
       mine.unshift({ token, curve, deployer: me, block: rc.blockNumber, name, symbol, logo: $("logo").value.trim(), ...strat, at: Date.now(), tx: tx.hash });
       store.set("feeverage.launches", mine.slice(0, 50));
     }
-    setStatus(`✓ ${esc(symbol)} is live. ${token ? `<a href="${tokenUrl(token)}">Open the token page →</a>` : ""}`, "ok");
+    setStatus(`✓ ${esc(symbol)} ${t("l.s.live")} ${token ? `<a href="${tokenUrl(token)}">${t("l.s.open")}</a>` : ""}`, "ok");
   } catch (e) {
     setStatus(errMsg(e), "err");
   } finally {
@@ -149,6 +149,7 @@ $("launchForm").addEventListener("submit", async (ev) => {
 });
 
 wallet.onChange(() => refreshGate());
+addEventListener("langchange", () => refreshGate());
 onMarkets(() => {
   if (!$("markets").querySelector("button")) renderMarkets();
   update();

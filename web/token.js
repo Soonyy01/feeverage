@@ -1,52 +1,89 @@
 import {
-  $, C, CURVE_ABI, E, TOKEN_ABI, chain, errMsg, esc, fmt, initShell, isAddr, loadTokens, market,
-  provider, px, readChain, short, stripTag, usd, wallet,
+  $, C, CURVE_ABI, E, TOKEN_ABI, chain, compactUsd, errMsg, esc, fmt, initShell, isAddr, live, loadTokens,
+  onMarkets, provider, px, readChain, short, stripTag, t, tokenLogo, usd, wallet,
 } from "./core.js";
 
 initShell();
 
 const addr = new URLSearchParams(location.search).get("t") ?? "";
-let t = null;
+let raw = null;
 
-function stat(label, value, cls = "") {
-  return `<div><dt>${label}</dt><dd class="${cls}">${value}</dd></div>`;
+const cell = (k, v, cls = "", f = "") => `<div><dt>${t(k)}</dt><dd class="${cls}" ${f ? `data-f="${f}"` : ""}>${v}</dd></div>`;
+
+// Static parts: rebuilt on data load and on language change.
+function render() {
+  if (!raw) return;
+  const x = live(raw);
+  document.title = `$${x.symbol} · Feeverage`;
+  $("hero").innerHTML = `${tokenLogo(x)}<div style="min-width:0"><span class="label muted">${esc(x.name)}</span><h1 style="margin-top:6px">$${esc(x.symbol)}</h1></div>
+    <div class="chipline"><span class="mk" style="font-size:13px;padding:9px 11px;${x.isLong ? "background:var(--yellow);color:var(--on-yellow)" : "background:var(--solid);color:var(--yellow)"}">${x.isLong ? "▲ LONG" : "▼ SHORT"} ${esc(x.market)} ${x.leverage}×</span></div>`;
+  $("mstats").innerHTML = [
+    cell("t.pnl", "—", "", "pnl"),
+    cell("t.mark", "—", "", "mark"),
+    cell("t.entry", px(x.entryPx), "", "entry"),
+    cell("t.liq", px(x.liqPx), "", "liq"),
+    cell("t.notional", "—", "", "notional"),
+    cell("t.margin", "—", "", "margin"),
+    cell("t.funded", usd(x.bridgedUsd ?? 0), "", "funded"),
+    cell("t.fees", x.feesEth == null ? "—" : fmt(x.feesEth, 4) + " ETH", "", "fees"),
+    cell("t.mcap", "—", "", "mcap"),
+  ].join("");
+  const prog = Math.max(0, Math.min(1, x.progress ?? 0));
+  $("curveBar").style.width = prog * 100 + "%";
+  $("curvePct").textContent = x.graduated ? "100%" : fmt(prog * 100, 0) + "%";
+  $("curveText").textContent = x.graduated ? t("t.curve.grad")
+    : x.reserveEth != null ? `${fmt(x.reserveEth, 4)} / ${fmt(x.thresholdEth, 4)} ETH ${t("t.curve.to")}` : "";
+  $("desc").textContent = stripTag(x.description) || t("t.nodesc");
+  $("links").innerHTML = `
+    <dt>${t("t.contract")}</dt><dd><a href="${C.explorer}/token/${x.token}" target="_blank" rel="noopener">${short(x.token)} ↗</a></dd>
+    <dt>${t("t.creator")}</dt><dd>${x.deployer ? `<a href="${C.explorer}/address/${x.deployer}" target="_blank" rel="noopener">${short(x.deployer)} ↗</a>` : "—"}</dd>
+    <dt>${t("t.hl")}</dt><dd>${isAddr(x.hlAccount) ? `<a href="https://app.hyperliquid.xyz/explorer/address/${x.hlAccount}" target="_blank" rel="noopener">${short(x.hlAccount)} ↗</a>` : t("t.hl.wait")}</dd>`;
+  const me = wallet.state.address?.toLowerCase();
+  $("push").hidden = !(me && x.deployer && me === x.deployer.toLowerCase() && !x.graduated);
+  $("trade").hidden = Boolean(x.graduated);
+  $("gradNote").hidden = !x.graduated;
+  tickLive(true);
 }
 
-function render() {
-  if (!t) return;
-  document.title = `${t.symbol} · Feeverage`;
-  const open = t.notionalUsd > 0;
-  const prog = Math.max(0, Math.min(1, t.progress ?? 0));
-  const img = t.logo ? `<img src="${esc(t.logo)}" alt="" referrerpolicy="no-referrer">` : `<span class="ph">${esc((t.symbol || "?")[0])}</span>`;
-  $("hero").innerHTML = `${img}<div style="min-width:0"><span class="label muted">${esc(t.name)}</span><h1 style="margin-top:6px">${esc(t.symbol)}</h1></div>
-    <span class="chip ${open ? (t.isLong ? "long" : "short") : "idle"}" style="font-size:13px;padding:9px 11px">${t.leverage}× ${t.isLong ? "▲ LONG" : "▼ SHORT"} ${esc(t.market)}</span>`;
-  const pnlCls = t.pnlUsd > 0 ? "pos" : t.pnlUsd < 0 ? "neg" : "";
-  $("mstats").innerHTML = [
-    stat("Fees routed", t.feesEth == null ? "—" : fmt(t.feesEth, 4) + " ETH"),
-    stat("Margin", t.equityUsd ? usd(t.equityUsd) : "—"),
-    stat("Notional", open ? usd(t.notionalUsd) : "—"),
-    stat("Unrealized PnL", open ? (t.pnlUsd > 0 ? "+" : "") + usd(t.pnlUsd) : "—", pnlCls),
-    stat("Entry price", px(t.entryPx)),
-    stat("Liq. price", px(t.liqPx)),
-    stat(`${esc(t.market)} mark`, `<span data-px="${esc(t.market)}">${market[t.market] ? px(market[t.market].px) : "—"}</span>`),
-    stat("Fees waiting", t.pendingEth == null ? "—" : fmt(t.pendingEth, 4) + " ETH"),
-    stat(t.graduated ? "Status" : "Bonding curve", t.graduated ? "Graduated" : fmt(prog * 100, 0) + "%"),
-  ].join("");
-  $("curveBar").style.width = prog * 100 + "%";
-  $("curveText").textContent = t.graduated
-    ? "Graduated to a Uniswap v4 pool on Robinhood Chain."
-    : t.reserveEth != null ? `${fmt(t.reserveEth, 4)} / ${fmt(t.thresholdEth, 4)} ETH to graduation` : "Reading the curve…";
-  const d = stripTag(t.description);
-  $("desc").textContent = d || "No description.";
-  $("links").innerHTML = `
-    <dt>Contract</dt><dd><a href="${C.explorer}/token/${t.token}" target="_blank" rel="noopener">${short(t.token)} ↗</a></dd>
-    <dt>Creator</dt><dd>${t.deployer ? `<a href="${C.explorer}/address/${t.deployer}" target="_blank" rel="noopener">${short(t.deployer)} ↗</a>` : "—"}</dd>
-    <dt>Hyperliquid account</dt><dd>${t.hlAccount ? `<a href="https://app.hyperliquid.xyz/explorer/address/${t.hlAccount}" target="_blank" rel="noopener">${short(t.hlAccount)} ↗</a>` : "assigned by keeper"}</dd>`;
+// Live parts: every price tick.
+let lastPnl = null;
+function tickLive(force) {
+  if (!raw) return;
+  const x = live(raw);
+  const set = (f, v, cls) => {
+    const el = document.querySelector(`[data-f="${f}"]`);
+    if (!el) return;
+    if (el.textContent !== v) el.textContent = v;
+    if (cls != null) el.className = cls;
+  };
+  const pnlTxt = x.open ? (x.pnlUsd > 0 ? "+" : "") + usd(x.pnlUsd) : t("t.nopos");
+  set("pnl", pnlTxt, x.pnlUsd > 0 ? "pos" : x.pnlUsd < 0 ? "neg" : "");
+  if (!force && lastPnl != null && x.open && x.pnlUsd !== lastPnl) {
+    const el = document.querySelector('[data-f="pnl"]');
+    el.classList.add(x.pnlUsd > lastPnl ? "flash-up" : "flash-down");
+  }
+  lastPnl = x.pnlUsd;
+  set("mark", x.markPx != null ? px(x.markPx) : "—");
+  set("notional", x.open ? usd(x.notionalUsd) : "—");
+  set("margin", x.equityUsd ? usd(x.equityUsd) : "—");
+  set("mcap", x.mcapUsd != null ? compactUsd(x.mcapUsd) : "—");
+  $("nextTxt").textContent = `${usd(x.pendingUsd)} / $${C.minTopUpUsd}`;
+  $("nextBar").style.width = Math.min(100, (x.pendingUsd / C.minTopUpUsd) * 100) + "%";
 
-  const me = wallet.state.address?.toLowerCase();
-  $("push").hidden = !(me && t.deployer && me === t.deployer.toLowerCase() && !t.graduated);
-  $("trade").hidden = Boolean(t.graduated);
-  $("gradNote").hidden = !t.graduated;
+  // Health gauge: distance to liquidation, live.
+  const d = x.liqDist;
+  let word = t("t.nopos"), deg = -90, dist = "";
+  if (x.open && d != null) {
+    word = d > 0.25 ? t("t.h.safe") : d > 0.12 ? t("t.h.ok") : d > 0.05 ? t("t.h.tight") : t("t.h.danger");
+    deg = Math.max(-90, Math.min(90, -90 + Math.min(1, d / 0.4) * 180));
+    dist = `${fmt(Math.max(0, d) * 100, 1)}% ${t("t.toliq")}`;
+  } else if (x.open) {
+    word = t("t.h.safe"); deg = 90;
+  }
+  $("hWord").textContent = word;
+  $("hWord").style.color = !x.open ? "var(--muted)" : d == null || d > 0.12 ? "var(--up)" : d > 0.05 ? "var(--ink)" : "var(--down)";
+  $("hDist").textContent = dist;
+  $("needle").style.transform = `rotate(${deg}deg)`;
 }
 
 // ------------------------------------------------------------------ trade
@@ -54,28 +91,28 @@ let side = "buy", timer;
 document.querySelectorAll("#trade .seg button").forEach((b) => b.addEventListener("click", () => {
   side = b.dataset.t;
   document.querySelectorAll("#trade .seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-  $("tAmtLbl").textContent = side === "buy" ? "Pay (ETH)" : `Sell (${t?.symbol ?? "tokens"})`;
-  $("tGo").textContent = side === "buy" ? `Buy ${t?.symbol ?? ""}` : `Sell ${t?.symbol ?? ""}`;
+  $("tAmtLbl").textContent = side === "buy" ? t("t.pay") : `${t("t.sellamt")} ($${raw?.symbol ?? ""})`;
+  $("tGo").textContent = side === "buy" ? t("t.buy") : t("t.sell");
   requote();
 }));
 function requote() {
   clearTimeout(timer);
   timer = setTimeout(async () => {
     const v = Number($("tAmt").value);
-    if (!t || !(v > 0) || !chain.ok) return ($("tQuote").textContent = chain.ok ? "Enter an amount" : "Connecting to Robinhood Chain…");
+    if (!raw || !(v > 0) || !chain.ok) return ($("tQuote").textContent = t("t.quote"));
     const from = wallet.state.address ?? C.feeRecipient;
     try {
-      const c = new E.Contract(t.curve, CURVE_ABI, provider);
+      const c = new E.Contract(raw.curve, CURVE_ABI, provider);
       const amt = E.parseEther(String(v));
       if (side === "buy") {
         const out = await c.buy.staticCall(amt, 0n, from, { value: amt, from });
-        $("tQuote").textContent = `≈ ${fmt(Number(E.formatEther(out)), 2)} ${t.symbol}`;
+        $("tQuote").textContent = `≈ ${fmt(Number(E.formatEther(out)), 2)} $${raw.symbol}`;
       } else {
         const out = await c.sell.staticCall(amt, 0n, from, { from });
         $("tQuote").textContent = `≈ ${fmt(Number(E.formatEther(out)), 6)} ETH`;
       }
     } catch {
-      $("tQuote").textContent = side === "sell" ? "Approve first or check your balance" : "Could not quote";
+      $("tQuote").textContent = side === "sell" ? t("t.approve") : t("t.noquote");
     }
   }, 300);
 }
@@ -85,25 +122,25 @@ $("tGo").addEventListener("click", async () => {
   const st = $("tStatus");
   try {
     const v = Number($("tAmt").value);
-    if (!(v > 0)) throw new Error("Enter an amount.");
+    if (!(v > 0)) throw new Error(t("t.quote"));
     const s = await wallet.signer();
     const me = await s.getAddress();
-    const c = new E.Contract(t.curve, CURVE_ABI, s);
+    const c = new E.Contract(raw.curve, CURVE_ABI, s);
     const amt = E.parseEther(String(v));
-    st.className = "status"; st.textContent = "Confirm in your wallet…";
+    st.className = "status"; st.textContent = t("t.confirm");
     if (side === "buy") {
       const out = await c.buy.staticCall(amt, 0n, me, { value: amt });
       await (await c.buy(amt, (out * 97n) / 100n, me, { value: amt })).wait();
     } else {
-      const tok = new E.Contract(t.token, TOKEN_ABI, s);
-      if ((await tok.allowance(me, t.curve)) < amt) {
-        st.textContent = "Approve the token first…";
-        await (await tok.approve(t.curve, E.MaxUint256)).wait();
+      const tok = new E.Contract(raw.token, TOKEN_ABI, s);
+      if ((await tok.allowance(me, raw.curve)) < amt) {
+        st.textContent = t("t.approving");
+        await (await tok.approve(raw.curve, E.MaxUint256)).wait();
       }
       const out = await c.sell.staticCall(amt, 0n, me);
       await (await c.sell(amt, (out * 97n) / 100n, me)).wait();
     }
-    st.className = "status ok"; st.textContent = "Done. Every trade feeds the position.";
+    st.className = "status ok"; st.textContent = t("t.done");
     load();
   } catch (e) {
     st.className = "status err"; st.innerHTML = errMsg(e);
@@ -114,8 +151,8 @@ $("push").addEventListener("click", async () => {
   const st = $("tStatus");
   try {
     const s = await wallet.signer();
-    await (await new E.Contract(t.curve, CURVE_ABI, s).sweepFees(0)).wait();
-    st.className = "status ok"; st.textContent = "Fees released. The keeper bridges them on its next run.";
+    await (await new E.Contract(raw.curve, CURVE_ABI, s).sweepFees(0)).wait();
+    st.className = "status ok"; st.textContent = t("t.pushed");
   } catch (e) {
     st.className = "status err"; st.innerHTML = errMsg(e);
   }
@@ -130,12 +167,14 @@ async function load() {
   }
   await readChain();
   const { tokens } = await loadTokens();
-  t = tokens.find((x) => x.token?.toLowerCase() === addr.toLowerCase()) ?? null;
-  $("missing").hidden = Boolean(t);
-  $("page").hidden = !t;
+  raw = tokens.find((x) => x.token?.toLowerCase() === addr.toLowerCase()) ?? null;
+  $("missing").hidden = Boolean(raw);
+  $("page").hidden = !raw;
   render();
   requote();
 }
 wallet.onChange(render);
+onMarkets(() => tickLive(false));
+addEventListener("langchange", render);
 load();
-setInterval(load, 60_000);
+setInterval(load, 30_000);

@@ -3,184 +3,371 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Feeverage Docs</title>
-<meta name="description" content="How Feeverage turns a token's trading fees into a leveraged Hyperliquid position.">
+<title>Docs · Feeverage</title>
+<script>try{var t=localStorage.getItem("feev.theme");if(t)document.documentElement.dataset.theme=t;var l=localStorage.getItem("feev.lang");if(l!=="en"&&l!=="zh")l=(navigator.language||"").toLowerCase().indexOf("zh")===0?"zh":"en";document.documentElement.lang=l;}catch(e){}</script>
+<meta name="description" content="Launch a token on Robinhood Chain. Its trading fees fund a leveraged Hyperliquid position.">
 <meta name="theme-color" content="#f4f2e8">
+<meta property="og:title" content="Feeverage — your token's fees. Leveraged.">
+<meta property="og:description" content="Launch a token on Robinhood Chain. Its trading fees fund a leveraged Hyperliquid position.">
 <meta property="og:image" content="assets/og-image.jpg">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/png" href="assets/logo-96.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=JetBrains+Mono:wght@400;500;700&display=swap">
 <link rel="stylesheet" href="styles.css">
 </head>
-<body data-page="docs">
+<body>
 
 <header class="top">
   <div class="wrap">
     <a class="brand" href="index.html" aria-label="Feeverage home">
-      <img src="assets/logo-96.png" alt="" width="38" height="38">
+      <img src="assets/logo-96.png" alt="" width="40" height="40">
       <span>FEEVERAGE</span>
     </a>
-    <nav class="links" aria-label="Main">
-      <a href="launch.html" data-page="launch">Launch</a>
-      <a href="tokens.html" data-page="tokens">Tokens</a>
-      <a href="stats.html" data-page="stats">Stats</a>
-      <a href="docs.html" data-page="docs">Docs</a>
-    </nav>
-    <button class="btn" id="connect" type="button" style="margin-left:auto">Connect</button>
+    <button class="btn menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="menu"><span class="burger" aria-hidden="true"></span><span data-i18n="menu">Menu</span></button>
+    <div class="menu" id="menu" hidden></div>
   </div>
 </header>
 
-<div class="ticker" aria-label="Hyperliquid prices">
+<div class="ticker" aria-label="Live prices">
   <div class="track" id="ticker"></div>
 </div>
 
-<main class="wrap">
-  <div class="docs">
-    <aside aria-label="Contents">
-      <span class="label">Contents</span>
-      <a href="#overview">Overview</a>
-      <a href="#launch">Launching a token</a>
-      <a href="#position">The position</a>
-      <a href="#fees">Fees</a>
-      <a href="#pipeline">From fee to position</a>
-      <a href="#accounts">Hyperliquid accounts</a>
-      <a href="#liquidation">Liquidation</a>
-      <a href="#graduation">Curve &amp; graduation</a>
-      <a href="#stats">Stats explained</a>
-      <a href="#contracts">Contracts</a>
-      <a href="#risks">Risks</a>
-      <a href="#faq">FAQ</a>
-    </aside>
+<main>
+  <div class="wrap">
+    <div class="docs" data-lang-only="en">
+      <aside aria-label="Contents">
+        <span class="label">Contents</span>
+        <a href="#en-overview">Overview</a>
+        <a href="#en-start">Getting started</a>
+        <a href="#en-launch">Launching a token</a>
+        <a href="#en-position">The position</a>
+        <a href="#en-fees">Fees</a>
+        <a href="#en-pipeline">From fee to position</a>
+        <a href="#en-live">Live numbers</a>
+        <a href="#en-accounts">Hyperliquid accounts</a>
+        <a href="#en-liquidation">Liquidation & health</a>
+        <a href="#en-graduation">Curve & graduation</a>
+        <a href="#en-trading">Buying & selling</a>
+        <a href="#en-tokens">Token list</a>
+        <a href="#en-contracts">Contracts</a>
+        <a href="#en-risks">Risks</a>
+        <a href="#en-faq">FAQ</a>
+      </aside>
+      <article>
+        <span class="label muted">Documentation</span>
+        <h1 class="echo-h" id="en-overview" style="margin-top:12px">Feeverage docs</h1>
+        <p class="lead">Feeverage is a token launchpad on <b>Robinhood Chain</b>. Every token launched here is wired to one leveraged perpetual position on <b>Hyperliquid</b>. Trading the token pays fees; the fees become margin; the margin is levered into the market the creator picked at launch.</p>
+        <div class="callout"><b>In one line:</b> your token's fees, leveraged. $1 of fees at 5× becomes about $4.75 of exposure.</div>
+        <div class="tbl"><table>
+          <thead><tr><th>Piece</th><th>Where it lives</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td>Token + bonding curve</td><td>Robinhood Chain</td><td>Price discovery from the first trade. Graduates to a Uniswap v4 pool.</td></tr>
+            <tr><td>Fee recipient</td><td>Robinhood Chain</td><td>Receives the creator share of every trade, for every Feeverage token.</td></tr>
+            <tr><td>Keeper</td><td>Feeverage server</td><td>Claims fees, bridges ETH to USDC, places orders, publishes live data.</td></tr>
+            <tr><td>Position account</td><td>Hyperliquid</td><td>One account per token. Holds the margin and the position.</td></tr>
+          </tbody>
+        </table></div>
 
-    <article>
-      <span class="label muted">Documentation</span>
-      <h1 class="echo-h" id="overview" style="margin-top:12px">Feeverage docs</h1>
-      <p class="lead">Feeverage is a token launchpad on <b>Robinhood Chain</b>. Every token it launches is wired to one leveraged perpetual position on <b>Hyperliquid</b>. Trading the token pays fees; the fees become margin; the margin is levered into the market the creator picked.</p>
-      <div class="callout"><b>In one line:</b> your token's fees, leveraged. $1 of fees at 5× is $5 of BTC exposure.</div>
+        <h2 id="en-start">Getting started</h2>
+        <ol>
+          <li>Open the <b>Menu</b> in the top-right corner and choose <b>Connect wallet</b>. You can sign in with MetaMask, Rabby, Coinbase Wallet, OKX Wallet, WalletConnect, or with email, Google or X. If you sign in without a wallet, one is created for you.</li>
+          <li>Make sure the wallet has some ETH on Robinhood Chain for the launch fee, your first buy and gas.</li>
+          <li>Choose <b>Launch</b> in the menu to create a token, or scroll the home page to browse and trade existing ones.</li>
+        </ol>
+        <p>The menu also switches the language (English / 中文) and the theme (light / dark). Both choices are remembered on your device.</p>
 
-      <div class="tbl"><table>
-        <thead><tr><th>Piece</th><th>Where it lives</th><th>What it does</th></tr></thead>
-        <tbody>
-          <tr><td>Token + bonding curve</td><td>Robinhood Chain</td><td>Price discovery from the first trade. Graduates to a Uniswap v4 pool.</td></tr>
-          <tr><td>Fee recipient</td><td>Robinhood Chain</td><td>Receives the creator share of every trade, for every Feeverage token.</td></tr>
-          <tr><td>Keeper</td><td>Feeverage server</td><td>Claims fees, bridges ETH → USDC, places orders, publishes stats.</td></tr>
-          <tr><td>Position account</td><td>Hyperliquid</td><td>One account per token. Holds the margin and the position.</td></tr>
-        </tbody>
-      </table></div>
+        <h2 id="en-launch">Launching a token</h2>
+        <ol>
+          <li><b>Describe the token.</b> Name, ticker, a direct link to a square logo image, a description and optional socials (X, Telegram, website). All of it is stored on-chain in the token contract.</li>
+          <li><b>Pick the position.</b> A Hyperliquid market (BTC, ETH, HYPE, SOL, XRP or DOGE), long or short, and a leverage from 1× to 20×. Leverage is also capped by the market's own maximum on Hyperliquid.</li>
+          <li><b>Set the first buy.</b> Your first buy happens in the same transaction as the launch, so nobody can buy before you. The minimum is 0.0001 ETH. You are exempt from the launch snipe tax.</li>
+          <li><b>Optional extra trade tax.</b> A percentage added on top of the base fee on every trade. It is paid in full to the position, so it makes the position grow faster, but it also makes the token more expensive to trade.</li>
+          <li><b>Confirm.</b> The site simulates the transaction first, so an error shows up before you pay any gas. One transaction creates the token, its bonding curve and your buy. You pay the launch fee, your first buy and gas.</li>
+        </ol>
+        <h3>The strategy line</h3>
+        <p>Feeverage appends one line to your description that records the position, for example:</p>
+        <pre class="code">Fees → 5x LONG BTC on Hyperliquid · feeverage:BTC:L:5</pre>
+        <p>Because it is part of the token's on-chain metadata, the strategy is public and can never be changed after launch. The keeper reads this line to know what to trade.</p>
 
-      <h2 id="launch">Launching a token</h2>
-      <ol>
-        <li><b>Connect.</b> Sign in with a wallet, email or social login. Feeverage uses Privy, so a wallet is created for you if you don't have one.</li>
-        <li><b>Describe the token.</b> Name, ticker, logo link, description and socials. All of it is stored on-chain in the token contract.</li>
-        <li><b>Pick the position.</b> A Hyperliquid market (BTC, ETH, HYPE, SOL, XRP, DOGE), long or short, and a leverage from 1× to 20×. Leverage is capped at the market's own maximum on Hyperliquid.</li>
-        <li><b>Make the first buy.</b> Launching includes your first buy in the same transaction, so nobody can buy before you. The minimum is 0.0001 ETH.</li>
-        <li><b>Confirm.</b> One transaction creates the token, its bonding curve and your buy. You pay the launch fee, your first buy and gas.</li>
-      </ol>
-      <h3>The strategy line</h3>
-      <p>Feeverage appends a line to your description that records the position, for example:</p>
-      <pre class="code">Fees → 5x LONG BTC on Hyperliquid · feeverage:BTC:L:5</pre>
-      <p>Because it is part of the token's on-chain metadata, the strategy is public and can't be changed after launch. The keeper reads this line to know what to trade.</p>
+        <h2 id="en-position">The position</h2>
+        <p>Each token has exactly one position: the market, side and leverage chosen at launch. Every time new fees arrive, the keeper adds them as margin and opens more size in the same direction.</p>
+        <div class="formula">new size = deposit × 0.95 × leverage ÷ price</div>
+        <p>5% of every deposit stays aside to cover Hyperliquid trading fees and funding, so a fresh deposit does not sit right at the liquidation edge. Positions use <b>cross margin</b>: all the margin in the token's account backs the position.</p>
+        <ul>
+          <li>Orders are immediate-or-cancel limit orders at most 1% through the current price.</li>
+          <li>Hyperliquid's minimum order is $10 of notional, so very small amounts wait until they add up.</li>
+          <li>Feeverage never closes a position. It runs until it is liquidated.</li>
+        </ul>
 
-      <h2 id="position">The position</h2>
-      <p>Each token has exactly one position: the market, side and leverage chosen at launch. Every time new fees arrive, the keeper adds them as margin and opens more size in the same direction.</p>
-      <div class="formula">new size = deposit × 0.95 × leverage ÷ mark price</div>
-      <p>The 5% kept aside covers Hyperliquid trading fees and funding so a fresh deposit doesn't immediately sit at the liquidation edge. Positions use <b>cross margin</b>, so all the margin in the token's account backs the position.</p>
-      <ul>
-        <li>Orders are immediate-or-cancel limit orders at 1% through the mark price.</li>
-        <li>Hyperliquid's minimum order is $10 notional, so very small deposits wait until they add up.</li>
-        <li>The position is never closed by Feeverage. It runs until it is liquidated.</li>
-      </ul>
+        <h2 id="en-fees">Fees</h2>
+        <p>Every buy and sell of a Feeverage token pays a trading fee, first on the bonding curve and later in the graduated pool. The fee is split between the launchpad protocol and the creator side. On Feeverage the whole creator side goes to the position, never to a person.</p>
+        <div class="tbl"><table>
+          <thead><tr><th>Fee</th><th>Who sets it</th><th>Where it goes</th></tr></thead>
+          <tbody>
+            <tr><td>Base trading fee</td><td>Launchpad protocol</td><td>Split: protocol share, the rest to the position</td></tr>
+            <tr><td>Extra trade tax (optional)</td><td>Creator, at launch (capped)</td><td>100% to the position</td></tr>
+            <tr><td>Launch fee</td><td>Launchpad protocol</td><td>Protocol, paid once at launch</td></tr>
+            <tr><td>Bridge + Hyperliquid fees</td><td>Bridge and Hyperliquid</td><td>Taken from the token's own fees</td></tr>
+          </tbody>
+        </table></div>
 
-      <h2 id="fees">Fees</h2>
-      <p>Every buy and sell of a Feeverage token pays a trading fee, on the bonding curve and later in the graduated pool. That fee is split between the launchpad protocol and the creator side. On Feeverage the whole creator side goes to the position, not to a person.</p>
-      <div class="tbl"><table>
-        <thead><tr><th>Fee</th><th>Who sets it</th><th>Where it goes</th></tr></thead>
-        <tbody>
-          <tr><td>Base trading fee</td><td>Launchpad protocol</td><td>Split: protocol share, rest to the position</td></tr>
-          <tr><td>Extra trade tax (optional)</td><td>Creator, at launch (capped)</td><td>100% to the position</td></tr>
-          <tr><td>Launch fee</td><td>Launchpad protocol</td><td>Protocol, paid once at launch</td></tr>
-        </tbody>
-      </table></div>
-      <p>The extra trade tax is how a creator makes the position grow faster. Traders pay it on top of the base fee, so a high tax also makes the token more expensive to trade.</p>
+        <h2 id="en-pipeline">From fee to position</h2>
+        <ol>
+          <li><b>Accrue.</b> Fees build up inside the token's bonding curve.</li>
+          <li><b>Release.</b> They are released to the on-chain fee escrow when the curve is swept: at graduation, when the launchpad sweeps, or when the creator presses <i>Push fees to the position</i> on the token page.</li>
+          <li><b>Claim.</b> The keeper claims released ETH every few minutes and credits each token by its own fee events, so every token's money stays separate.</li>
+          <li><b>Bridge.</b> Once a token has at least <b>$12</b> waiting, the keeper bridges that ETH to USDC on Hyperliquid, straight into the token's account. On each token this shows as <i>Next top-up $x / $12</i>.</li>
+          <li><b>Trade.</b> The new margin is levered into the token's market and side.</li>
+        </ol>
+        <div class="callout warn">A bridge usually lands within a minute, but can take longer when the bridge is busy.</div>
 
-      <h2 id="pipeline">From fee to position</h2>
-      <ol>
-        <li><b>Accrue.</b> Fees build up inside the token's bonding curve.</li>
-        <li><b>Release.</b> They are released to the fee escrow when the curve is swept. That happens at graduation, when the launchpad sweeps, or when the creator presses <i>Push fees</i> on the token.</li>
-        <li><b>Claim.</b> The keeper claims released ETH from the escrow every few minutes and credits each token by its own fee events.</li>
-        <li><b>Bridge.</b> Once a token has at least ~$12 waiting, the keeper bridges its ETH to USDC on Hyperliquid, straight into that token's account.</li>
-        <li><b>Trade.</b> The new margin is levered into the token's market and side.</li>
-      </ol>
-      <div class="callout warn">Bridging usually lands in under a minute, but can take longer when the bridge is busy. Fees still waiting are shown as <i>Fees not yet bridged</i> on each token.</div>
+        <h2 id="en-live">Live numbers</h2>
+        <p>Prices on Feeverage are live. The ticker under the header streams Hyperliquid prices for every supported market and flashes green or red on each change. If Hyperliquid cannot be reached from your network, prices fall back to CoinGecko and Binance so they keep moving.</p>
+        <p>Every open position is re-marked against the live price of its own market every second:</p>
+        <div class="formula">live PnL = size × (live price − entry price)</div>
+        <p>For a short, size is negative, so the same formula gives profit when the price falls. Margin, notional, the health gauge and the totals at the top of the home page all update from the same live price.</p>
+        <div class="tbl"><table>
+          <thead><tr><th>Number</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td>Tokens launched</td><td>Tokens launched through Feeverage.</td></tr>
+            <tr><td>Fees routed</td><td>Creator-side fees credited to positions, in ETH and USD.</td></tr>
+            <tr><td>Margin deployed</td><td>Current value of every token's Hyperliquid account.</td></tr>
+            <tr><td>Open notional</td><td>Total size of all open positions at the live price.</td></tr>
+            <tr><td>Unrealized PnL</td><td>Profit or loss of all open positions at the live price.</td></tr>
+            <tr><td>Funded</td><td>Fees already bridged into one token's position, in USD.</td></tr>
+            <tr><td>MCAP</td><td>Token price on its curve × total supply, in USD.</td></tr>
+          </tbody>
+        </table></div>
 
-      <h2 id="accounts">Hyperliquid accounts</h2>
-      <p>Every token gets its own Hyperliquid account, so positions never mix. The address is listed on the token's card and in the trade panel. Open it on Hyperliquid's explorer to see the margin, the entry price, every fill and the funding paid.</p>
+        <h2 id="en-accounts">Hyperliquid accounts</h2>
+        <p>Every token gets its own Hyperliquid account, so positions never mix. The address is shown on the token page. Open it on Hyperliquid's explorer to check the margin, the entry price, every fill and the funding paid.</p>
 
-      <h2 id="liquidation">Liquidation</h2>
-      <p>With leverage <i>L</i>, a fresh position is liquidated after a move against it of roughly:</p>
-      <div class="formula">distance ≈ 1 ÷ L − maintenance margin</div>
-      <div class="tbl"><table>
-        <thead><tr><th>Leverage</th><th>Approx. move to liquidation</th></tr></thead>
-        <tbody>
-          <tr><td class="mono">2×</td><td class="mono">≈ 49%</td></tr>
-          <tr><td class="mono">5×</td><td class="mono">≈ 19%</td></tr>
-          <tr><td class="mono">10×</td><td class="mono">≈ 9%</td></tr>
-          <tr><td class="mono">20×</td><td class="mono">≈ 4%</td></tr>
-        </tbody>
-      </table></div>
-      <p>Because size is added over time, the average entry moves and the real liquidation price drifts. The live figure is on each token's card. After a liquidation the account is empty; fees that arrive later open a fresh position with the same settings.</p>
+        <h2 id="en-liquidation">Liquidation & health</h2>
+        <p>With leverage <i>L</i>, a fresh position is liquidated after a move against it of roughly:</p>
+        <div class="formula">distance ≈ 1 ÷ L − maintenance margin</div>
+        <div class="tbl"><table>
+          <thead><tr><th>Leverage</th><th>Approx. move to liquidation</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">2×</td><td class="mono">≈ 49%</td></tr>
+            <tr><td class="mono">5×</td><td class="mono">≈ 19%</td></tr>
+            <tr><td class="mono">10×</td><td class="mono">≈ 9%</td></tr>
+            <tr><td class="mono">20×</td><td class="mono">≈ 4%</td></tr>
+          </tbody>
+        </table></div>
+        <p>The token page shows a live <b>health</b> gauge: <b>Safe</b> above 25% from liquidation, <b>Healthy</b> above 12%, <b>Tight</b> above 5%, and <b>Danger</b> below that. Because size is added over time, the average entry moves and the real liquidation price drifts. After a liquidation the account is empty; fees that arrive later open a fresh position with the same settings.</p>
 
-      <h2 id="graduation">Curve &amp; graduation</h2>
-      <p>A new token trades on a constant-product bonding curve priced in ETH. The progress bar on each card shows how much ETH the curve has taken in against its graduation threshold. When it fills, the curve graduates: its reserves seed a full-range Uniswap v4 pool on Robinhood Chain and the liquidity is locked permanently. Fees keep flowing to the position after graduation.</p>
-      <p>Before graduation you can buy and sell directly on Feeverage from the token's <i>Trade</i> panel. After graduation, trade it in any Robinhood Chain swap app with the contract address.</p>
+        <h2 id="en-graduation">Curve & graduation</h2>
+        <p>A new token trades on a constant-product bonding curve priced in ETH. The token page shows how much ETH the curve has taken in against its graduation threshold. When it fills, the curve graduates: its reserves seed a full-range Uniswap v4 pool on Robinhood Chain and the liquidity is locked permanently. Fees keep flowing to the position after graduation.</p>
 
-      <h2 id="stats">Stats explained</h2>
-      <div class="tbl"><table>
-        <thead><tr><th>Stat</th><th>Meaning</th></tr></thead>
-        <tbody>
-          <tr><td>Tokens launched</td><td>Tokens launched through Feeverage.</td></tr>
-          <tr><td>Fees routed</td><td>Creator-side fees credited to positions, in ETH and USD.</td></tr>
-          <tr><td>Margin deployed</td><td>Current account value across every token's Hyperliquid account.</td></tr>
-          <tr><td>Open notional</td><td>Total size of all open positions at mark price.</td></tr>
-          <tr><td>Unrealized PnL</td><td>Profit or loss of all open positions at mark price.</td></tr>
-        </tbody>
-      </table></div>
+        <h2 id="en-trading">Buying & selling</h2>
+        <p>Before graduation you can trade any token directly on its page: choose <b>Buy</b> or <b>Sell</b>, enter an amount and confirm in your wallet. The page shows a quote first and protects you with a 3% slippage limit. Selling asks for a one-time token approval. After graduation, trade the token in any Robinhood Chain swap app using its contract address.</p>
 
-      <h2 id="contracts">Contracts</h2>
-      <div class="tbl"><table>
-        <thead><tr><th>Contract</th><th>Address</th></tr></thead>
-        <tbody>
-          <tr><td>Network</td><td class="mono">Robinhood Chain</td></tr>
-          <tr><td>Launch router</td><td class="mono"><a href="https://robinhoodchain.blockscout.com/address/0xe33E9E479dF8802cb0866d5d05258bEc4cF62948" target="_blank" rel="noopener">0xe33E9E479dF8802cb0866d5d05258bEc4cF62948</a></td></tr>
-          <tr><td>Launch factory</td><td class="mono"><a href="https://robinhoodchain.blockscout.com/address/0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e" target="_blank" rel="noopener">0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e</a></td></tr>
-          <tr><td>Fee escrow</td><td class="mono"><a href="https://robinhoodchain.blockscout.com/address/0xd3AFEB2a57f70eF218Aa82451c51B2fb0416Ac9e" target="_blank" rel="noopener">0xd3AFEB2a57f70eF218Aa82451c51B2fb0416Ac9e</a></td></tr>
-          <tr><td>Fee recipient (Feeverage)</td><td class="mono" id="feeRecipient">set in config</td></tr>
-        </tbody>
-      </table></div>
+        <h2 id="en-tokens">Token list</h2>
+        <p>The home page lists every Feeverage token. Sort by <b>Newest</b>, <b>Live positions</b>, <b>Top PnL</b>, <b>Top MCAP</b>, <b>Most funded</b>, <b>Next top-up</b> or <b>Graduated</b>, filter by <b>All</b>, <b>Long</b> or <b>Short</b>, and search by ticker, name, market or address. Each card shows the strategy, live PnL, market cap, funding and progress to the next top-up. Tap the address to copy it.</p>
 
-      <h2 id="risks">Risks</h2>
-      <ul>
-        <li><b>Leverage.</b> Positions can be liquidated and the margin lost.</li>
-        <li><b>Custody.</b> Fees pass through the Feeverage fee recipient and keeper, and the Hyperliquid accounts are controlled by Feeverage's keeper key.</li>
-        <li><b>Bridging.</b> Fees cross chains through a third-party bridge, which can be delayed.</li>
-        <li><b>Smart contracts.</b> Bugs in any contract involved can lose funds. Nothing here is audited by Feeverage.</li>
-        <li><b>Memecoins.</b> Token prices can go to zero regardless of how the position does.</li>
-      </ul>
-      <div class="callout warn">Feeverage is an experiment. Nothing here is financial advice. Only use money you can afford to lose.</div>
+        <h2 id="en-contracts">Contracts</h2>
+        <div class="tbl"><table>
+          <thead><tr><th>Contract</th><th>Address</th></tr></thead>
+          <tbody>
+            <tr><td>Network</td><td class="mono">Robinhood Chain mainnet</td></tr>
+            <tr><td>Launch router</td><td class="mono"><a href="https://robinhoodchain.blockscout.com/address/0xe33E9E479dF8802cb0866d5d05258bEc4cF62948" target="_blank" rel="noopener">0xe33E9E479dF8802cb0866d5d05258bEc4cF62948</a></td></tr>
+            <tr><td>Launch factory</td><td class="mono"><a href="https://robinhoodchain.blockscout.com/address/0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e" target="_blank" rel="noopener">0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e</a></td></tr>
+            <tr><td>Fee escrow</td><td class="mono"><a href="https://robinhoodchain.blockscout.com/address/0xd3AFEB2a57f70eF218Aa82451c51B2fb0416Ac9e" target="_blank" rel="noopener">0xd3AFEB2a57f70eF218Aa82451c51B2fb0416Ac9e</a></td></tr>
+            <tr><td>Fee recipient</td><td class="mono" data-fee-recipient>set in config</td></tr>
+          </tbody>
+        </table></div>
 
-      <h2 id="faq">FAQ</h2>
-      <h3>Does the position's profit go to holders?</h3>
-      <p>Not automatically. The position is public and tied to the token, so it is part of the token's story, but profits stay in the token's Hyperliquid account.</p>
-      <h3>Can the creator change the market or leverage later?</h3>
-      <p>No. The strategy line is written into the token at launch and the keeper follows it.</p>
-      <h3>Can the creator take the fees?</h3>
-      <p>No. The creator side of the fee goes to the Feeverage fee recipient, which only funds positions.</p>
-      <h3>Why does a token show "Waiting for fees"?</h3>
-      <p>Its fees are still on the curve, still being bridged, or below Hyperliquid's $10 minimum order.</p>
-      <h3>Which wallets work?</h3>
-      <p>MetaMask, Rabby, Coinbase Wallet, OKX Wallet, anything with WalletConnect, or an email / Google / X login with a Privy embedded wallet. You need a little ETH on Robinhood Chain.</p>
-    </article>
+        <h2 id="en-risks">Risks</h2>
+        <ul>
+          <li><b>Leverage.</b> Positions can be liquidated and the margin lost.</li>
+          <li><b>Custody.</b> Fees pass through the Feeverage fee recipient and keeper, and the Hyperliquid accounts are controlled by the keeper key.</li>
+          <li><b>Bridging.</b> Fees cross chains through a third-party bridge, which can be delayed.</li>
+          <li><b>Smart contracts.</b> Bugs in any contract involved can lose funds. Nothing here has been audited by Feeverage.</li>
+          <li><b>Memecoins.</b> A token's price can go to zero no matter how its position does.</li>
+        </ul>
+        <div class="callout warn">Feeverage is an experiment. Nothing here is financial advice. Only use money you can afford to lose.</div>
+
+        <h2 id="en-faq">FAQ</h2>
+        <h3>Does the position's profit go to holders?</h3>
+        <p>Not automatically. The position is public and tied to the token, so it is part of the token's story, but profits stay in the token's Hyperliquid account.</p>
+        <h3>Can the creator change the market or leverage later?</h3>
+        <p>No. The strategy line is written into the token at launch and the keeper follows it.</p>
+        <h3>Can the creator take the fees?</h3>
+        <p>No. The creator side of the fee goes to the Feeverage fee recipient, which only funds positions.</p>
+        <h3>Why does a token say "Opens at $12"?</h3>
+        <p>Its fees have not reached the $12 top-up threshold yet, or they are still on the curve or being bridged.</p>
+        <h3>Why do my numbers change every second?</h3>
+        <p>PnL, margin and notional are re-marked against the live price of the token's market on every tick.</p>
+      </article>
+    </div>
+    <div class="docs" data-lang-only="zh">
+      <aside aria-label="目录">
+        <span class="label">目录</span>
+        <a href="#zh-overview">概览</a>
+        <a href="#zh-start">快速开始</a>
+        <a href="#zh-launch">发射代币</a>
+        <a href="#zh-position">仓位</a>
+        <a href="#zh-fees">手续费</a>
+        <a href="#zh-pipeline">从手续费到仓位</a>
+        <a href="#zh-live">实时数据</a>
+        <a href="#zh-accounts">Hyperliquid 账户</a>
+        <a href="#zh-liquidation">清算与健康度</a>
+        <a href="#zh-graduation">曲线与毕业</a>
+        <a href="#zh-trading">买入与卖出</a>
+        <a href="#zh-tokens">代币列表</a>
+        <a href="#zh-contracts">合约</a>
+        <a href="#zh-risks">风险</a>
+        <a href="#zh-faq">常见问题</a>
+      </aside>
+      <article>
+        <span class="label muted">文档</span>
+        <h1 class="echo-h" id="zh-overview" style="margin-top:12px">Feeverage 文档</h1>
+        <p class="lead">Feeverage 是 <b>Robinhood Chain</b> 上的代币发射平台。在这里发射的每个代币都连接着 <b>Hyperliquid</b> 上的一个杠杆永续仓位。交易代币会产生手续费；手续费变成保证金；保证金按创建者在发射时选定的市场加上杠杆。</p>
+        <div class="callout"><b>一句话：</b>你的代币手续费，加杠杆。$1 手续费在 5× 杠杆下约等于 $4.75 的敞口。</div>
+        <div class="tbl"><table>
+          <thead><tr><th>组成部分</th><th>所在位置</th><th>作用</th></tr></thead>
+          <tbody>
+            <tr><td>代币 + 联合曲线</td><td>Robinhood Chain</td><td>从第一笔交易开始定价。毕业后进入 Uniswap v4 池。</td></tr>
+            <tr><td>手续费接收地址</td><td>Robinhood Chain</td><td>接收所有 Feeverage 代币每笔交易中创建者的那部分手续费。</td></tr>
+            <tr><td>Keeper</td><td>Feeverage 服务器</td><td>领取手续费、把 ETH 跨链换成 USDC、下单、发布实时数据。</td></tr>
+            <tr><td>仓位账户</td><td>Hyperliquid</td><td>每个代币一个账户，存放保证金和仓位。</td></tr>
+          </tbody>
+        </table></div>
+
+        <h2 id="zh-start">快速开始</h2>
+        <ol>
+          <li>打开右上角的 <b>菜单</b>，选择 <b>连接钱包</b>。可以使用 MetaMask、Rabby、Coinbase Wallet、OKX Wallet、WalletConnect，也可以用邮箱、Google 或 X 登录。没有钱包的话会自动为你创建一个。</li>
+          <li>确保钱包里有 Robinhood Chain 上的 ETH，用于支付发射费、首笔买入和 gas。</li>
+          <li>在菜单中选择 <b>发射</b> 来创建代币，或者在首页浏览和交易已有的代币。</li>
+        </ol>
+        <p>菜单还可以切换语言（English / 中文）和主题（浅色 / 深色），你的选择会保存在当前设备上。</p>
+
+        <h2 id="zh-launch">发射代币</h2>
+        <ol>
+          <li><b>填写代币信息。</b>名称、代码、方形 logo 图片直链、简介，以及可选的社交链接（X、Telegram、网站）。这些信息全部存储在链上的代币合约中。</li>
+          <li><b>选择仓位。</b>Hyperliquid 市场（BTC、ETH、HYPE、SOL、XRP 或 DOGE）、做多或做空，以及 1× 到 20× 的杠杆。杠杆同时受该市场在 Hyperliquid 上的最大杠杆限制。</li>
+          <li><b>设置首笔买入。</b>首笔买入与发射在同一笔交易中完成，所以没人能抢在你之前买入。最少 0.0001 ETH。你不需要支付发射时的狙击税。</li>
+          <li><b>可选的额外交易税。</b>在每笔交易的基础手续费之上额外收取的百分比，全部注入仓位，让仓位增长更快，但也会让代币的交易成本更高。</li>
+          <li><b>确认。</b>网站会先模拟交易，如果会失败，你在支付 gas 之前就能看到错误。一笔交易即可创建代币、联合曲线并完成你的买入。你需要支付发射费、首笔买入金额和 gas。</li>
+        </ol>
+        <h3>策略说明</h3>
+        <p>Feeverage 会在简介末尾自动添加一行，记录这个代币的仓位，例如：</p>
+        <pre class="code">Fees → 5x LONG BTC on Hyperliquid · feeverage:BTC:L:5</pre>
+        <p>这一行属于代币的链上元数据，所以策略是公开的，发射后永远无法更改。Keeper 读取这一行来决定交易什么。</p>
+
+        <h2 id="zh-position">仓位</h2>
+        <p>每个代币只有一个仓位：发射时选定的市场、方向和杠杆。每当有新的手续费到账，keeper 就把它作为保证金，并在同一方向上加仓。</p>
+        <div class="formula">新增规模 = 存入金额 × 0.95 × 杠杆 ÷ 价格</div>
+        <p>每笔存入的 5% 预留给 Hyperliquid 交易手续费和资金费，避免新仓位一开就贴近清算线。仓位使用 <b>全仓保证金</b>：代币账户里的全部保证金都用来支撑这个仓位。</p>
+        <ul>
+          <li>订单为立即成交或取消（IOC）限价单，偏离当前价格最多 1%。</li>
+          <li>Hyperliquid 最小订单名义价值为 $10，金额太小时会等累积够了再下单。</li>
+          <li>Feeverage 永远不会主动平仓，仓位会一直持有直到被清算。</li>
+        </ul>
+
+        <h2 id="zh-fees">手续费</h2>
+        <p>Feeverage 代币的每一次买入和卖出都会支付交易手续费，先在联合曲线上，毕业后在池子里。手续费在发射平台协议和创建者之间分配。在 Feeverage 上，创建者的那一部分全部进入仓位，永远不会进入任何个人的口袋。</p>
+        <div class="tbl"><table>
+          <thead><tr><th>费用</th><th>由谁设定</th><th>去向</th></tr></thead>
+          <tbody>
+            <tr><td>基础交易手续费</td><td>发射平台协议</td><td>分成：协议部分，其余进入仓位</td></tr>
+            <tr><td>额外交易税（可选）</td><td>创建者，发射时设定（有上限）</td><td>100% 进入仓位</td></tr>
+            <tr><td>发射费</td><td>发射平台协议</td><td>协议，发射时支付一次</td></tr>
+            <tr><td>跨链 + Hyperliquid 费用</td><td>跨链桥和 Hyperliquid</td><td>从代币自身的手续费中扣除</td></tr>
+          </tbody>
+        </table></div>
+
+        <h2 id="zh-pipeline">从手续费到仓位</h2>
+        <ol>
+          <li><b>累积。</b>手续费在代币的联合曲线中累积。</li>
+          <li><b>释放。</b>曲线被清扫时，手续费释放到链上托管合约：在毕业时、发射平台清扫时，或创建者在代币页面点击 <i>将手续费推入仓位</i> 时。</li>
+          <li><b>领取。</b>Keeper 每隔几分钟领取已释放的 ETH，并根据每个代币自己的手续费事件记账，确保每个代币的资金互不混合。</li>
+          <li><b>跨链。</b>某个代币待处理的手续费达到 <b>$12</b> 后，keeper 会把这些 ETH 跨链换成 Hyperliquid 上的 USDC，直接存入该代币的账户。每个代币上都会显示为 <i>下次加仓 $x / $12</i>。</li>
+          <li><b>交易。</b>新的保证金按代币设定的市场和方向加上杠杆。</li>
+        </ol>
+        <div class="callout warn">跨链通常一分钟内到账，但在拥堵时可能更久。</div>
+
+        <h2 id="zh-live">实时数据</h2>
+        <p>Feeverage 上的价格都是实时的。页头下方的行情条实时显示所有支持市场的 Hyperliquid 价格，每次变动都会闪烁绿色或红色。如果你的网络无法访问 Hyperliquid，价格会自动改用 CoinGecko 和 Binance 的数据，保持实时更新。</p>
+        <p>每个持仓每秒都会根据其所在市场的实时价格重新计算：</p>
+        <div class="formula">实时盈亏 = 仓位规模 × (实时价格 − 开仓价)</div>
+        <p>做空时仓位规模为负数，所以同一公式在价格下跌时得到盈利。保证金、名义价值、健康度指示和首页的汇总数据都基于同一个实时价格更新。</p>
+        <div class="tbl"><table>
+          <thead><tr><th>数据</th><th>含义</th></tr></thead>
+          <tbody>
+            <tr><td>已发射代币</td><td>通过 Feeverage 发射的代币数量。</td></tr>
+            <tr><td>已导入手续费</td><td>记入仓位的创建者手续费，以 ETH 和美元计。</td></tr>
+            <tr><td>已投入保证金</td><td>所有代币 Hyperliquid 账户的当前价值。</td></tr>
+            <tr><td>持仓名义价值</td><td>所有持仓按实时价格计算的总规模。</td></tr>
+            <tr><td>未实现盈亏</td><td>所有持仓按实时价格计算的盈亏。</td></tr>
+            <tr><td>已注资</td><td>已跨链注入某个代币仓位的手续费（美元）。</td></tr>
+            <tr><td>市值</td><td>代币在曲线上的价格 × 总供应量，以美元计。</td></tr>
+          </tbody>
+        </table></div>
+
+        <h2 id="zh-accounts">Hyperliquid 账户</h2>
+        <p>每个代币都有独立的 Hyperliquid 账户，仓位永不混合。账户地址显示在代币页面上。在 Hyperliquid 浏览器中打开即可查看保证金、开仓价、每一笔成交和已支付的资金费。</p>
+
+        <h2 id="zh-liquidation">清算与健康度</h2>
+        <p>使用杠杆 <i>L</i> 时，新仓位在价格反向波动大约以下幅度后会被清算：</p>
+        <div class="formula">距离 ≈ 1 ÷ L − 维持保证金</div>
+        <div class="tbl"><table>
+          <thead><tr><th>杠杆</th><th>距清算的大致波动幅度</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">2×</td><td class="mono">≈ 49%</td></tr>
+            <tr><td class="mono">5×</td><td class="mono">≈ 19%</td></tr>
+            <tr><td class="mono">10×</td><td class="mono">≈ 9%</td></tr>
+            <tr><td class="mono">20×</td><td class="mono">≈ 4%</td></tr>
+          </tbody>
+        </table></div>
+        <p>代币页面会实时显示 <b>健康度</b>：距清算超过 25% 为 <b>安全</b>，超过 12% 为 <b>健康</b>，超过 5% 为 <b>紧张</b>，低于 5% 为 <b>危险</b>。由于仓位会不断加仓，平均开仓价和实际清算价都会变化。清算后账户清空；之后到账的手续费会以相同设置开新仓。</p>
+
+        <h2 id="zh-graduation">曲线与毕业</h2>
+        <p>新代币在以 ETH 计价的恒定乘积联合曲线上交易。代币页面会显示曲线已收到多少 ETH，以及距毕业门槛还有多远。曲线填满后代币毕业：储备用于在 Robinhood Chain 上创建全区间 Uniswap v4 池，流动性永久锁定。毕业后手续费继续流向仓位。</p>
+
+        <h2 id="zh-trading">买入与卖出</h2>
+        <p>毕业前，你可以直接在代币页面交易：选择 <b>买入</b> 或 <b>卖出</b>，输入数量，然后在钱包中确认。页面会先显示报价，并以 3% 的滑点上限保护你。卖出前需要一次性授权代币。毕业后，可以在任何 Robinhood Chain 兑换应用中使用合约地址交易。</p>
+
+        <h2 id="zh-tokens">代币列表</h2>
+        <p>首页列出所有 Feeverage 代币。可以按 <b>最新</b>、<b>持仓中</b>、<b>盈亏最高</b>、<b>市值最高</b>、<b>注资最多</b>、<b>即将加仓</b> 或 <b>已毕业</b> 排序，按 <b>全部</b>、<b>做多</b> 或 <b>做空</b> 筛选，并可按代码、名称、市场或地址搜索。每张卡片显示策略、实时盈亏、市值、注资情况和距下次加仓的进度。点击地址即可复制。</p>
+
+        <h2 id="zh-contracts">合约</h2>
+        <div class="tbl"><table>
+          <thead><tr><th>合约</th><th>地址</th></tr></thead>
+          <tbody>
+            <tr><td>网络</td><td class="mono">Robinhood Chain 主网</td></tr>
+            <tr><td>发射路由</td><td class="mono"><a href="https://robinhoodchain.blockscout.com/address/0xe33E9E479dF8802cb0866d5d05258bEc4cF62948" target="_blank" rel="noopener">0xe33E9E479dF8802cb0866d5d05258bEc4cF62948</a></td></tr>
+            <tr><td>发射工厂</td><td class="mono"><a href="https://robinhoodchain.blockscout.com/address/0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e" target="_blank" rel="noopener">0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e</a></td></tr>
+            <tr><td>手续费托管</td><td class="mono"><a href="https://robinhoodchain.blockscout.com/address/0xd3AFEB2a57f70eF218Aa82451c51B2fb0416Ac9e" target="_blank" rel="noopener">0xd3AFEB2a57f70eF218Aa82451c51B2fb0416Ac9e</a></td></tr>
+            <tr><td>手续费接收地址</td><td class="mono" data-fee-recipient>在 config 中设置</td></tr>
+          </tbody>
+        </table></div>
+
+        <h2 id="zh-risks">风险</h2>
+        <ul>
+          <li><b>杠杆。</b>仓位可能被清算，保证金全部损失。</li>
+          <li><b>托管。</b>手续费会经过 Feeverage 的手续费接收地址和 keeper，Hyperliquid 账户由 keeper 私钥控制。</li>
+          <li><b>跨链。</b>手续费通过第三方跨链桥转移，可能出现延迟。</li>
+          <li><b>智能合约。</b>任何相关合约中的漏洞都可能导致资金损失。Feeverage 尚未进行审计。</li>
+          <li><b>Meme 币。</b>无论仓位表现如何，代币价格都可能归零。</li>
+        </ul>
+        <div class="callout warn">Feeverage 是一个实验性项目，本页内容不构成投资建议。请只投入你能承受损失的资金。</div>
+
+        <h2 id="zh-faq">常见问题</h2>
+        <h3>仓位的盈利会分给持有者吗？</h3>
+        <p>不会自动分配。仓位是公开的，并与代币绑定，是代币故事的一部分，但盈利留在该代币的 Hyperliquid 账户中。</p>
+        <h3>创建者之后可以更改市场或杠杆吗？</h3>
+        <p>不可以。策略在发射时写入代币，keeper 严格按此执行。</p>
+        <h3>创建者可以拿走手续费吗？</h3>
+        <p>不可以。手续费中创建者的部分进入 Feeverage 的手续费接收地址，只用于为仓位注资。</p>
+        <h3>为什么代币显示“满 $12 开仓”？</h3>
+        <p>它的手续费还没达到 $12 的加仓门槛，或者仍在曲线中，或者正在跨链。</p>
+        <h3>为什么数据每秒都在变化？</h3>
+        <p>每次价格变动时，盈亏、保证金和名义价值都会按代币所在市场的实时价格重新计算。</p>
+      </article>
+    </div>
   </div>
 </main>
 
@@ -188,31 +375,12 @@
   <div class="wrap">
     <img src="assets/logo-96.png" alt="" width="36" height="36">
     <span class="label">Robinhood × Hyperliquid</span>
-    <a href="index.html">App</a>
+    <span class="label muted" style="margin-left:auto" data-i18n="foot.risk">Experimental. Leverage can go to zero.</span>
   </div>
 </footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
 <script src="config.js"></script>
-<script type="module">import { initShell } from "./core.js"; initShell();</script>
-<script>
-  // Fill the fee recipient from config and highlight the section in view.
-  (function () {
-    var c = window.FEEVERAGE_CONFIG || {};
-    var el = document.getElementById("feeRecipient");
-    if (/^0x[0-9a-fA-F]{40}$/.test(c.feeRecipient || "")) {
-      el.innerHTML = '<a target="_blank" rel="noopener" href="' + c.explorer + "/address/" + c.feeRecipient + '">' + c.feeRecipient + "</a>";
-    }
-    var links = [].slice.call(document.querySelectorAll(".docs aside a"));
-    var heads = links.map(function (a) { return document.querySelector(a.getAttribute("href")); });
-    function onScroll() {
-      var y = 120, cur = 0;
-      heads.forEach(function (h, i) { if (h && h.getBoundingClientRect().top < y) cur = i; });
-      links.forEach(function (a, i) { a.classList.toggle("on", i === cur); });
-    }
-    addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
-  })();
-</script>
+<script type="module" src="docs.js"></script>
 </body>
 </html>

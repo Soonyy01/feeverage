@@ -1,12 +1,14 @@
-// Shared by every page: config, chain + Hyperliquid access, live prices,
-// wallet button, token data, formatting and the small animation helpers.
+// Shared by every page: config, chain + Hyperliquid access, live prices, menu,
+// theme, language, token data with live position maths, and animation helpers.
 import { wallet } from "./wallet.js";
-export { wallet };
+import { applyI18n, getLang, setLang, t } from "./i18n.js";
+export { wallet, t, getLang };
 
 const DEFAULTS = {
   privyAppId: "",
   feeRecipient: "",
   keeperApi: "",
+  xUrl: "",
   chainId: 4663,
   rpc: "https://rpc.mainnet.chain.robinhood.com",
   explorer: "https://robinhoodchain.blockscout.com",
@@ -15,8 +17,10 @@ const DEFAULTS = {
   launchConfigId: 0,
   startBlock: 0,
   hlInfo: "https://api.hyperliquid.xyz/info",
+  hlWs: "wss://api.hyperliquid.xyz/ws",
   markets: ["BTC", "ETH", "HYPE", "SOL", "XRP", "DOGE"],
   maxLeverage: 20,
+  minTopUpUsd: 12,
 };
 // A typo in config.js must never take the whole site down.
 export const C = { ...DEFAULTS, ...(window.FEEVERAGE_CONFIG || {}) };
@@ -42,6 +46,8 @@ export const TOKEN_ABI = [
   "function symbol() view returns (string)",
   "function logo() view returns (string)",
   "function description() view returns (string)",
+  "function totalSupply() view returns (uint256)",
+  "function socials() view returns (string twitter,string telegram,string discord,string website,string farcaster)",
   "function balanceOf(address) view returns (uint256)",
   "function allowance(address,address) view returns (uint256)",
   "function approve(address,uint256) returns (bool)",
@@ -53,6 +59,7 @@ export const CURVE_ABI = [
   "function graduated() view returns (bool)",
   "function realQuoteReserve() view returns (uint256)",
   "function graduationThreshold() view returns (uint256)",
+  "function getReserves() view returns (uint256 quoteReserve, uint256 tokenReserve)",
 ];
 
 // Strategy tag stored in the token description (same format the keeper parses).
@@ -84,6 +91,7 @@ export const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 export const tokenUrl = (addr) => `token.html?t=${addr}`;
+const X_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.9 2H22l-7.6 8.7L23.3 22h-7l-5.5-7.2L4.5 22H1.4l8.1-9.3L1 2h7.1l5 6.6L18.9 2Zm-1.2 18h1.7L7.1 3.9H5.3L17.7 20Z"/></svg>`;
 
 // ------------------------------------------------------------------ chain
 export const provider = E ? new E.JsonRpcProvider(C.rpc, C.chainId, { staticNetwork: true }) : null;
@@ -103,75 +111,109 @@ export async function readChain() {
   return chain;
 }
 
-// ------------------------------------------------------------------ Hyperliquid prices
-export const market = {}; // name -> { px, prev, maxLev }
+// ------------------------------------------------------------------ live prices
+// Hyperliquid first (websocket + REST). If Hyperliquid is unreachable from the
+// visitor's network, CoinGecko and then Binance keep prices live.
+export const market = {}; // name -> { px, prev, maxLev, src }
 const marketListeners = new Set();
 export const onMarkets = (fn) => marketListeners.add(fn);
+const emitMarkets = () => marketListeners.forEach((fn) => fn(market));
+let hlOk = false, wsLive = false, wsDirty = false;
 
-async function hl(body) {
+async function postHl(body) {
   const r = await fetch(C.hlInfo, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   if (!r.ok) throw new Error("Hyperliquid " + r.status);
   return r.json();
 }
 
-async function loadMarkets() {
-  try {
-    const [meta, ctxs] = await hl({ type: "metaAndAssetCtxs" });
-    meta.universe.forEach((u, i) => {
-      const prev = market[u.name];
-      market[u.name] = {
-        px: prev?.ws ? prev.px : Number(ctxs[i].markPx), // keep the fresher websocket price
-        prev: Number(ctxs[i].prevDayPx),
-        maxLev: u.maxLeverage,
-        ws: prev?.ws ?? false,
-      };
-    });
-  } catch {
-    /* Hyperliquid unreachable: show no prices rather than made-up ones */
-  }
-  if (!tickerBuilt) renderTicker();
-  paintPrices();
-  marketListeners.forEach((fn) => fn(market));
+async function fromHyperliquid() {
+  const [meta, ctxs] = await postHl({ type: "metaAndAssetCtxs" });
+  meta.universe.forEach((u, i) => {
+    const prev = market[u.name];
+    market[u.name] = {
+      px: prev?.src === "ws" && wsLive ? prev.px : Number(ctxs[i].markPx),
+      prev: Number(ctxs[i].prevDayPx),
+      maxLev: u.maxLeverage,
+      src: prev?.src === "ws" && wsLive ? "ws" : "hl",
+    };
+  });
+  hlOk = true;
 }
 
-// Live mid prices pushed by Hyperliquid's public websocket.
-const lastShown = {};
-let tickerBuilt = false, wsDirty = false;
+const GECKO = { BTC: "bitcoin", ETH: "ethereum", HYPE: "hyperliquid", SOL: "solana", XRP: "ripple", DOGE: "dogecoin" };
+async function fromCoinGecko() {
+  const ids = C.markets.map((m) => GECKO[m]).filter(Boolean).join(",");
+  const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`);
+  if (!r.ok) throw new Error("coingecko " + r.status);
+  const j = await r.json();
+  for (const m of C.markets) {
+    const d = j[GECKO[m]];
+    if (!d?.usd) continue;
+    const ch = Number(d.usd_24h_change ?? 0);
+    market[m] = { ...(market[m] ?? { maxLev: C.maxLeverage }), px: Number(d.usd), prev: Number(d.usd) / (1 + ch / 100), src: "cg" };
+  }
+}
+
+async function fromBinance() {
+  const syms = C.markets.map((m) => `"${m}USDT"`).join(",");
+  const r = await fetch(`https://data-api.binance.vision/api/v3/ticker/24hr?symbols=[${syms}]`);
+  if (!r.ok) throw new Error("binance " + r.status);
+  for (const x of await r.json()) {
+    const m = x.symbol.replace(/USDT$/, "");
+    market[m] = { ...(market[m] ?? { maxLev: C.maxLeverage }), px: Number(x.lastPrice), prev: Number(x.openPrice), src: "bn" };
+  }
+}
+
+async function loadMarkets() {
+  try {
+    await fromHyperliquid();
+  } catch {
+    hlOk = false;
+    try { await fromCoinGecko(); } catch { try { await fromBinance(); } catch {} }
+  }
+  renderTicker();
+  paintPrices();
+  emitMarkets();
+}
+
 function connectPrices() {
   let ws;
-  try { ws = new WebSocket("wss://api.hyperliquid.xyz/ws"); } catch { return; }
+  try { ws = new WebSocket(C.hlWs); } catch { return; }
   ws.onopen = () => ws.send(JSON.stringify({ method: "subscribe", subscription: { type: "allMids" } }));
   ws.onmessage = (ev) => {
     let msg;
     try { msg = JSON.parse(ev.data); } catch { return; }
     if (msg.channel !== "allMids") return;
+    wsLive = true;
     const mids = msg.data?.mids ?? {};
     for (const m of C.markets) {
       if (mids[m] == null) continue;
       market[m] ??= { prev: 0, maxLev: C.maxLeverage };
       market[m].px = Number(mids[m]);
-      market[m].ws = true;
+      market[m].src = "ws";
       wsDirty = true;
     }
   };
-  ws.onclose = () => setTimeout(connectPrices, 3000);
+  ws.onclose = () => { wsLive = false; setTimeout(connectPrices, 4000); };
   ws.onerror = () => ws.close();
 }
 
+const lastShown = {};
+let tickerKey = "";
 function renderTicker() {
   const el = $("ticker");
   if (!el) return;
-  const have = C.markets.filter((m) => market[m]);
-  const items = have.map((m) => `<span class="item" data-coin="${m}"><b>${m}-PERP</b><span class="p">—</span><span class="c"></span></span>`);
-  if (!items.length) items.push(`<span class="item"><b>HYPERLIQUID</b>PRICES LOADING…</span>`);
-  items.push(`<span class="item"><b>FEEVERAGE</b>$FEEV</span>`, `<span class="item"><b>FEES</b>→ LEVERAGED</span>`, `<span class="item"><b>ROBINHOOD</b>× HYPERLIQUID</span>`);
-  const row = items.join("");
-  el.innerHTML = row + row; // doubled for a seamless loop
-  tickerBuilt = have.length > 0;
+  const have = C.markets.filter((m) => market[m]?.px);
+  const list = have.length ? have : C.markets;
+  const key = list.join(",");
+  if (key === tickerKey) return;
+  tickerKey = key;
+  const row = list.map((m) => `<span class="item" data-coin="${m}"><b>${m}</b><span class="p">—</span><span class="c"></span></span>`).join("");
+  el.innerHTML = row + row + row + row; // repeated for a seamless loop on wide screens
   Object.keys(lastShown).forEach((k) => delete lastShown[k]);
 }
 
-// Updates numbers in place and flashes green or red on every tick.
+// Updates every live price on the page in place and flashes green or red on each tick.
 export function paintPrices() {
   for (const m of C.markets) {
     const d = market[m];
@@ -187,11 +229,7 @@ export function paintPrices() {
         c.className = "c " + (ch >= 0 ? "up" : "down");
         c.textContent = `${ch >= 0 ? "▲" : "▼"} ${fmt(Math.abs(ch), 2)}%`;
       }
-      if (dir) {
-        el.classList.remove("tick-up", "tick-down");
-        void el.offsetWidth; // restart the flash
-        el.classList.add(dir);
-      }
+      if (dir) { el.classList.remove("tick-up", "tick-down"); void el.offsetWidth; el.classList.add(dir); }
     });
     document.querySelectorAll(`[data-px="${m}"]`).forEach((s) => (s.textContent = text));
     lastShown[m] = d.px;
@@ -201,10 +239,31 @@ export function paintPrices() {
 setInterval(() => {
   if (!wsDirty) return;
   wsDirty = false;
-  if (!tickerBuilt) renderTicker();
+  renderTicker();
   paintPrices();
-  marketListeners.forEach((fn) => fn(market));
+  emitMarkets();
 }, 1000);
+
+// ------------------------------------------------------------------ live position maths
+// Positions come from Hyperliquid (or the keeper's snapshot) and are re-marked every
+// second against the live price of the token's own market and side.
+export function live(tok) {
+  const m = market[tok.market]?.px;
+  const ethPx = market.ETH?.px ?? 0;
+  const r = { ...tok };
+  if (tok.szi && tok.entryPx && m) {
+    r.markPx = m;
+    r.pnlUsd = tok.szi * (m - tok.entryPx);
+    r.notionalUsd = Math.abs(tok.szi) * m;
+    r.equityUsd = (tok.equityUsd ?? 0) + (r.pnlUsd - (tok.pnlUsd ?? 0));
+  } else r.markPx = m ?? null;
+  r.liqDist = r.liqPx && m ? (tok.isLong ? (m - r.liqPx) / m : (r.liqPx - m) / m) : null;
+  r.pendingUsd = (tok.pendingEth ?? 0) * ethPx;
+  r.feesUsd = (tok.feesEth ?? 0) * ethPx;
+  r.mcapUsd = tok.mcapEth != null ? tok.mcapEth * ethPx : null;
+  r.open = r.notionalUsd > 0;
+  return r;
+}
 
 // ------------------------------------------------------------------ tokens
 async function fromKeeper() {
@@ -215,18 +274,18 @@ async function fromKeeper() {
 
 const FEES_SWEPT = E ? E.id("FeesSwept(uint256,uint256,uint256)") : null;
 async function addCurveFees(list) {
-  const withCurve = list.filter((t) => t.curve);
+  const withCurve = list.filter((x) => x.curve);
   if (!withCurve.length) return;
   const latest = await provider.getBlockNumber();
-  const first = Math.min(...withCurve.map((t) => t.block || latest));
-  const byCurve = new Map(withCurve.map((t) => [t.curve.toLowerCase(), t]));
-  withCurve.forEach((t) => (t.feesEth = 0));
+  const first = Math.min(...withCurve.map((x) => x.block || latest));
+  const byCurve = new Map(withCurve.map((x) => [x.curve.toLowerCase(), x]));
+  withCurve.forEach((x) => (x.feesEth = 0));
   for (let from = first, n = 0; from <= latest && n < 60; from += 10_000, n++) {
     const logs = await provider.getLogs({ address: [...byCurve.keys()], topics: [FEES_SWEPT], fromBlock: from, toBlock: Math.min(latest, from + 9_999) });
     for (const l of logs) {
       const [, , creator] = E.AbiCoder.defaultAbiCoder().decode(["uint256", "uint256", "uint256"], l.data);
-      const t = byCurve.get(l.address.toLowerCase());
-      if (t) t.feesEth += Number(E.formatEther(creator));
+      const x = byCurve.get(l.address.toLowerCase());
+      if (x) x.feesEth += Number(E.formatEther(creator));
     }
   }
 }
@@ -235,7 +294,7 @@ async function fromChain() {
   const latest = await provider.getBlockNumber();
   const start = Math.max(C.startBlock || 0, latest - 300_000);
   const found = new Map();
-  for (let from = latest; from > start && found.size < 120; from -= 10_000) {
+  for (let from = latest; from > start && found.size < 150; from -= 10_000) {
     const logs = await factory.queryFilter(factory.filters.TokenLaunched(), Math.max(start, from - 9_999), from);
     for (const l of logs) found.set(l.args.token.toLowerCase(), { token: l.args.token, curve: l.args.curve, deployer: l.args.deployer, block: l.blockNumber });
   }
@@ -244,85 +303,159 @@ async function fromChain() {
   await Promise.all([...found.values()].map(async (x) => {
     const info = await factory.getLaunchedToken(x.token).catch(() => null);
     if (!info || info.creatorFeeRecipient.toLowerCase() !== C.feeRecipient.toLowerCase()) return;
-    const t = new E.Contract(x.token, TOKEN_ABI, provider);
-    const [name, symbol, logo, description] = await Promise.all([t.name(), t.symbol(), t.logo().catch(() => ""), t.description().catch(() => "")]);
+    const tk = new E.Contract(x.token, TOKEN_ABI, provider);
+    const [name, symbol, description] = await Promise.all([tk.name(), tk.symbol(), tk.description().catch(() => "")]);
     const s = parseStrategy(description);
     if (!s) return;
-    out.push({ token: x.token, curve: info.curve, deployer: info.deployer, name, symbol, logo, description, ...s, block: x.block ?? 0, feesEth: null, pendingEth: null, equityUsd: 0, notionalUsd: 0, pnlUsd: 0, liqPx: null });
+    out.push({ token: x.token, curve: info.curve, deployer: info.deployer, name, symbol, description, ...s, block: x.block ?? 0, feesEth: null, pendingEth: null });
   }));
   out.sort((a, b) => b.block - a.block);
   await addCurveFees(out);
   return out;
 }
 
-async function enrichCurves(list) {
+async function enrichChain(list) {
   if (!chain.ok) return;
-  await Promise.all(list.filter((t) => t.curve).map(async (t) => {
-    const c = new E.Contract(t.curve, CURVE_ABI, provider);
-    try {
-      const [g, real, thr] = await Promise.all([c.graduated(), c.realQuoteReserve(), c.graduationThreshold()]);
-      t.graduated = g;
-      t.progress = g ? 1 : Number(real) / Number(thr || 1n);
-      t.reserveEth = Number(E.formatEther(real));
-      t.thresholdEth = Number(E.formatEther(thr));
-    } catch {}
-    if (!t.logo || t.description == null) {
-      const tk = new E.Contract(t.token, TOKEN_ABI, provider);
-      t.logo ||= await tk.logo().catch(() => "");
-      t.description ??= await tk.description().catch(() => "");
+  await Promise.all(list.filter((x) => x.token).map(async (x) => {
+    const tk = new E.Contract(x.token, TOKEN_ABI, provider);
+    const jobs = [
+      x.logo == null ? tk.logo().then((v) => (x.logo = v)).catch(() => (x.logo = "")) : null,
+      x.description == null ? tk.description().then((v) => (x.description = v)).catch(() => {}) : null,
+      x.socials == null ? tk.socials().then((v) => (x.socials = { twitter: v.twitter, telegram: v.telegram, website: v.website })).catch(() => (x.socials = {})) : null,
+      x.supply == null ? tk.totalSupply().then((v) => (x.supply = Number(E.formatEther(v)))).catch(() => {}) : null,
+    ];
+    if (x.curve) {
+      const c = new E.Contract(x.curve, CURVE_ABI, provider);
+      jobs.push((async () => {
+        try {
+          const [g, real, thr, res] = await Promise.all([c.graduated(), c.realQuoteReserve(), c.graduationThreshold(), c.getReserves()]);
+          x.graduated = g;
+          x.progress = g ? 1 : Number(real) / Number(thr || 1n);
+          x.reserveEth = Number(E.formatEther(real));
+          x.thresholdEth = Number(E.formatEther(thr));
+          x.spotEth = res.tokenReserve > 0n ? Number(E.formatEther(res.quoteReserve)) / Number(E.formatEther(res.tokenReserve)) : null;
+        } catch {}
+      })());
     }
+    await Promise.all(jobs.filter(Boolean));
+    if (x.spotEth != null && x.supply) x.mcapEth = x.spotEth * x.supply;
   }));
 }
 
-// Returns { tokens, totals, source, updatedAt }. Everything is real data; with no launches it is empty.
+// Pull each token's position straight from Hyperliquid when reachable.
+async function enrichPositions(list) {
+  if (!hlOk) return;
+  await Promise.all(list.filter((x) => isAddr(x.hlAccount)).map(async (x) => {
+    try {
+      const s = await postHl({ type: "clearinghouseState", user: x.hlAccount });
+      x.equityUsd = Number(s.marginSummary.accountValue);
+      const p = s.assetPositions.map((a) => a.position).find((q) => q.coin === x.market);
+      if (p) {
+        x.szi = Number(p.szi);
+        x.entryPx = Number(p.entryPx);
+        x.liqPx = p.liquidationPx ? Number(p.liquidationPx) : null;
+        x.pnlUsd = Number(p.unrealizedPnl);
+        x.notionalUsd = Math.abs(Number(p.positionValue));
+      } else {
+        x.szi = 0; x.notionalUsd = 0; x.pnlUsd = 0; x.liqPx = null; x.entryPx = null;
+      }
+    } catch {}
+  }));
+}
+
+// Returns { tokens, totals(), source }. Everything is real data; with no launches it is empty.
 export async function loadTokens() {
-  let tokens = [], totals = null, source, updatedAt = null;
+  let tokens = [], source;
   try {
     if (C.keeperApi) {
       const s = await fromKeeper();
       tokens = s.tokens.slice().reverse();
-      totals = s.totals;
-      updatedAt = s.updatedAt;
-      source = `Keeper API · ${s.dryRun ? "dry run" : "live"}`;
+      source = t("src.keeper") + (s.dryRun ? " (dry run)" : "");
     } else if (chain.ok && isAddr(C.feeRecipient)) {
       tokens = await fromChain();
-      source = "Live from Robinhood Chain";
+      source = t("src.chain");
     } else throw new Error("no source");
-    if (!tokens.length) source += " · no tokens launched yet";
   } catch {
     tokens = [];
-    source = isAddr(C.feeRecipient) ? "Connecting to Robinhood Chain…" : "Live stats start once feeRecipient is set in config.js";
+    source = isAddr(C.feeRecipient) || C.keeperApi ? t("src.connecting") : t("src.none");
   }
-  await enrichCurves(tokens);
-  const sum = (k) => tokens.reduce((a, x) => a + (Number(x[k]) || 0), 0);
-  const ethPx = market.ETH?.px ?? 0;
-  totals ??= { tokens: tokens.length, feesEth: sum("feesEth"), feesUsd: sum("feesEth") * ethPx, equityUsd: sum("equityUsd"), notionalUsd: sum("notionalUsd"), pnlUsd: sum("pnlUsd") };
-  return { tokens, totals, source, updatedAt };
+  await Promise.all([enrichChain(tokens), enrichPositions(tokens)]);
+  return { tokens, source };
+}
+
+export function totals(tokens) {
+  const L = tokens.map(live);
+  const sum = (k) => L.reduce((a, x) => a + (Number(x[k]) || 0), 0);
+  return {
+    tokens: tokens.length,
+    feesEth: sum("feesEth"), feesUsd: sum("feesUsd"),
+    equityUsd: sum("equityUsd"), notionalUsd: sum("notionalUsd"), pnlUsd: sum("pnlUsd"),
+    longs: tokens.filter((x) => x.isLong).length, shorts: tokens.filter((x) => !x.isLong).length,
+  };
 }
 
 // ------------------------------------------------------------------ token card
-export function tokenCard(t) {
-  const open = t.notionalUsd > 0;
-  const side = open ? (t.isLong ? "long" : "short") : "idle";
-  const img = t.logo ? `<img src="${esc(t.logo)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span class="ph">${esc((t.symbol || "?")[0])}</span>`;
-  const pnlCls = t.pnlUsd > 0 ? "pos" : t.pnlUsd < 0 ? "neg" : "";
-  const prog = Math.max(0, Math.min(1, t.progress ?? 0));
-  return `<article class="card" data-href="${tokenUrl(t.token)}">
-    <div class="head">${img}<div style="min-width:0"><b><a href="${tokenUrl(t.token)}">${esc(t.symbol)}</a></b><span>${esc(t.name)}</span></div></div>
-    <div class="pos-row"><span class="chip ${side}">${t.leverage}× ${t.isLong ? "▲ LONG" : "▼ SHORT"} ${esc(t.market)}</span><span class="label ${open ? "" : "muted"}">${open ? "Position open" : "Waiting for fees"}</span></div>
-    <dl>
-      <div><dt>Fees routed</dt><dd>${t.feesEth == null ? "—" : fmt(t.feesEth, 4) + " ETH"}</dd></div>
-      <div><dt>Margin</dt><dd>${t.equityUsd ? usd(t.equityUsd) : "—"}</dd></div>
-      <div><dt>Notional</dt><dd>${open ? usd(t.notionalUsd) : "—"}</dd></div>
-      <div><dt>uPnL</dt><dd class="${pnlCls}">${open ? (t.pnlUsd > 0 ? "+" : "") + usd(t.pnlUsd) : "—"}</dd></div>
-    </dl>
-    <div style="padding:10px 14px 14px"><div class="row2" style="display:flex;justify-content:space-between"><span class="label muted">${t.graduated ? "Graduated" : "Bonding curve"}</span><span class="label">${t.graduated ? "100%" : fmt(prog * 100, 0) + "%"}</span></div>
-      <div style="display:flex;height:8px;border:2px solid var(--ink);margin-top:8px"><i style="display:block;width:${prog * 100}%;background:var(--yellow)"></i></div></div>
+export function tokenLogo(x, cls = "tlogo") {
+  return x.logo
+    ? `<img class="${cls}" src="${esc(x.logo)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+    : `<span class="${cls}">${esc((x.symbol || "?")[0])}</span>`;
+}
+
+export function tokenCard(raw) {
+  const x = live(raw);
+  const tw = x.socials?.twitter;
+  const twUrl = tw ? (/^https?:\/\//.test(tw) ? tw : `https://x.com/${tw.replace(/^@/, "")}`) : null;
+  return `<article class="card" data-href="${tokenUrl(x.token)}" data-token="${x.token}">
+    <div class="head">${tokenLogo(x)}
+      <div style="min-width:0"><b><a href="${tokenUrl(x.token)}">$${esc(x.symbol)}</a></b><span>${esc(x.name)}</span></div>
+      <span class="mk">${esc(x.market)}</span></div>
+    <div class="strat"><span><span class="${x.isLong ? "side-l" : "side-s"}">${x.isLong ? "▲ Long" : "▼ Short"}</span> ${esc(x.market)} ${x.leverage}×</span>
+      <span class="muted" style="font-size:11.5px">${t("card.mcap")} <b data-f="mcap" style="color:var(--ink)">${x.mcapUsd != null ? compactUsd(x.mcapUsd) : "—"}</b></span></div>
+    <div class="big ${x.pnlUsd > 0 ? "pos" : x.pnlUsd < 0 ? "neg" : ""}" data-f="pnl">${x.open ? (x.pnlUsd > 0 ? "+" : "") + usd(x.pnlUsd) : (x.bridgedUsd ?? 0) > 0 ? t("card.reopen") : t("card.waiting")}</div>
+    <div class="sub"><span>${t("card.next")}</span><span data-f="next">${usd(x.pendingUsd)} / $${C.minTopUpUsd}</span></div>
+    <div class="meter"><i data-f="meter" style="width:${Math.min(100, (x.pendingUsd / C.minTopUpUsd) * 100)}%"></i></div>
+    <div class="foot">
+      <span style="display:flex;gap:8px;align-items:center">${twUrl ? `<a class="iconbtn" href="${esc(twUrl)}" target="_blank" rel="noopener" aria-label="X">${X_ICON}</a>` : ""}<span class="label muted" style="letter-spacing:.08em">${usd(x.bridgedUsd ?? 0, 0)} ${t("card.funded")}</span></span>
+      <button class="ca" type="button" data-copy="${x.token}">${short(x.token)} ⧉</button>
+    </div>
   </article>`;
 }
 
+// Re-marks every card on screen against live prices without rebuilding it.
+export function refreshCards(container, byToken) {
+  container.querySelectorAll("[data-token]").forEach((card) => {
+    const raw = byToken.get(card.dataset.token.toLowerCase());
+    if (!raw) return;
+    const x = live(raw);
+    const pnl = card.querySelector('[data-f="pnl"]');
+    if (pnl && x.open) {
+      const txt = (x.pnlUsd > 0 ? "+" : "") + usd(x.pnlUsd);
+      if (pnl.textContent !== txt) {
+        const up = x.pnlUsd > (pnl._v ?? x.pnlUsd);
+        pnl.textContent = txt;
+        pnl.className = `big ${x.pnlUsd > 0 ? "pos" : x.pnlUsd < 0 ? "neg" : ""}`;
+        if (pnl._v != null) { pnl.classList.remove("flash-up", "flash-down"); void pnl.offsetWidth; pnl.classList.add(up ? "flash-up" : "flash-down"); }
+        pnl._v = x.pnlUsd;
+      }
+    }
+    const mc = card.querySelector('[data-f="mcap"]');
+    if (mc && x.mcapUsd != null) mc.textContent = compactUsd(x.mcapUsd);
+    const nx = card.querySelector('[data-f="next"]');
+    if (nx) nx.textContent = `${usd(x.pendingUsd)} / $${C.minTopUpUsd}`;
+    const mt = card.querySelector('[data-f="meter"]');
+    if (mt) mt.style.width = Math.min(100, (x.pendingUsd / C.minTopUpUsd) * 100) + "%";
+  });
+}
+
 export function wireCards(container) {
-  container.addEventListener("click", (e) => {
+  container.addEventListener("click", async (e) => {
+    const cp = e.target.closest("[data-copy]");
+    if (cp) {
+      e.stopPropagation();
+      try { await navigator.clipboard.writeText(cp.dataset.copy); cp.textContent = t("card.copy") + " ✓"; } catch { cp.textContent = cp.dataset.copy; }
+      setTimeout(() => (cp.textContent = short(cp.dataset.copy) + " ⧉"), 1500);
+      return;
+    }
     if (e.target.closest("a")) return;
     const c = e.target.closest("[data-href]");
     if (c) location.href = c.dataset.href;
@@ -342,16 +475,16 @@ export function roll(el, to, fmtFn, dur = 1200) {
   const t0 = performance.now();
   const spread = Math.max(Math.abs(to), Number(el.dataset.spread ?? 1000));
   const id = (el._rollId = (el._rollId ?? 0) + 1);
-  const tick = (t) => {
+  const tick = (now) => {
     if (el._rollId !== id) return;
-    const p = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - p, 4);
+    const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 4);
     el.textContent = fmtFn(p < 1 ? to + (1 - e) * spread * Math.random() : to);
     if (p < 1) requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
 }
 
-// Wires every [data-stat] inside `root`: rolls on scroll-in and on data change.
+// Wires every [data-stat] inside `root`: rolls on scroll-in, eases to new live values.
 const STAT_FMT = { tokens: (n) => fmt(n, 0), pnlUsd: signedUsd };
 export function statBlock(root) {
   const els = [...root.querySelectorAll("[data-stat]")];
@@ -364,47 +497,82 @@ export function statBlock(root) {
   if ("IntersectionObserver" in window) {
     new IntersectionObserver((en) => en.forEach((x) => x.isIntersecting && rollAll()), { threshold: 0.3 }).observe(root);
   } else rollAll();
-  return (totals) => {
+  return (tot, { quiet = false } = {}) => {
     els.forEach((el) => {
-      const val = Number(totals[el.dataset.stat] ?? 0) || 0;
-      if (Number(el.dataset.v) !== val) roll(el, val, el._fmt);
-      if (el.dataset.stat === "pnlUsd") el.classList.toggle("pos", val > 0), el.classList.toggle("neg", val < 0);
+      const val = Number(tot[el.dataset.stat] ?? 0) || 0;
+      if (Math.abs(Number(el.dataset.v) - val) > 1e-9) {
+        if (quiet) { el.dataset.v = val; el.textContent = el._fmt(val); }
+        else roll(el, val, el._fmt, 900);
+      }
+      if (el.dataset.stat === "pnlUsd") { el.classList.toggle("pos", val > 0); el.classList.toggle("neg", val < 0); }
     });
-    root.querySelectorAll("[data-stat-sub=feesEth]").forEach((s) => (s.textContent = `${fmt(totals.feesEth ?? 0, 4)} ETH`));
+    root.querySelectorAll("[data-stat-sub=feesEth]").forEach((s) => (s.textContent = `${fmt(tot.feesEth ?? 0, 4)} ETH`));
   };
 }
 
-// ------------------------------------------------------------------ header + boot
+// ------------------------------------------------------------------ theme
+const THEME_KEY = "feev.theme";
+export function setTheme(th) {
+  document.documentElement.dataset.theme = th;
+  try { localStorage.setItem(THEME_KEY, th); } catch {}
+}
+const theme = () => (document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+
+// ------------------------------------------------------------------ menu
+function renderMenu() {
+  const m = $("menu");
+  if (!m) return;
+  const w = wallet.state;
+  const connected = w.authenticated && w.address;
+  const xUrl = C.xUrl;
+  const xHandle = xUrl ? "@" + xUrl.replace(/\/+$/, "").split("/").pop() : t("m.x.none");
+  m.innerHTML = `
+    <a class="mi" href="launch.html"><b>${t("m.launch")}</b><small>${t("m.launch.s")}</small></a>
+    <a class="mi" href="docs.html"><b>${t("m.docs")}</b><small>${t("m.docs.s")}</small></a>
+    <button class="mi" type="button" id="menuWallet"><b>${connected ? t("m.disconnect") : t("m.connect")}</b><small>${connected ? short(w.address) : w.mode === "loading" ? t("m.loading") : t("m.connect.s")}</small></button>
+    <div class="mi static"><b>${t("m.lang")}</b><span class="toggle"><button type="button" data-lang="en" aria-pressed="${getLang() === "en"}">EN</button><button type="button" data-lang="zh" aria-pressed="${getLang() === "zh"}">中文</button></span></div>
+    <div class="mi static"><b>${t("m.theme")}</b><span class="toggle"><button type="button" data-theme-set="light" aria-pressed="${theme() === "light"}">${t("m.light")}</button><button type="button" data-theme-set="dark" aria-pressed="${theme() === "dark"}">${t("m.dark")}</button></span></div>
+    <a class="mi x ${xUrl ? "" : "off"}" href="${xUrl ? esc(xUrl) : "#"}" target="_blank" rel="noopener">${X_ICON}<small>${esc(xHandle)}</small></a>`;
+}
+
+function wireMenu() {
+  const btn = $("menuBtn"), m = $("menu");
+  if (!btn || !m) return;
+  const close = () => { m.hidden = true; btn.setAttribute("aria-expanded", "false"); };
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const open = m.hidden;
+    if (open) renderMenu();
+    m.hidden = !open;
+    btn.setAttribute("aria-expanded", String(open));
+  });
+  document.addEventListener("click", (e) => { if (!m.hidden && !m.contains(e.target)) close(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  m.addEventListener("click", async (e) => {
+    const l = e.target.closest("[data-lang]");
+    if (l) { setLang(l.dataset.lang); renderMenu(); return; }
+    const th = e.target.closest("[data-theme-set]");
+    if (th) { setTheme(th.dataset.themeSet); renderMenu(); return; }
+    if (e.target.closest("#menuWallet")) {
+      close();
+      try {
+        if (wallet.state.authenticated) await wallet.disconnect();
+        else await wallet.connect();
+      } catch (err) { console.warn(err); }
+    }
+  });
+  wallet.onChange(() => { if (!m.hidden) renderMenu(); });
+}
+
+// ------------------------------------------------------------------ boot
 export function initShell() {
-  const page = document.body.dataset.page;
-  document.querySelectorAll("nav.links a").forEach((a) => {
-    if (a.dataset.page === page) a.setAttribute("aria-current", "page");
-  });
-  const b = $("connect");
-  wallet.onChange((s) => {
-    if (s.authenticated && s.address) b.textContent = short(s.address);
-    else b.textContent = s.mode === "loading" ? "Loading…" : "Connect";
-    b.disabled = s.mode === "loading";
-  });
-  b.addEventListener("click", async () => {
-    try {
-      if (wallet.state.authenticated) await wallet.disconnect();
-      else await wallet.connect();
-    } catch (e) {
-      console.warn(e);
-    }
-  });
-  const note = $("setupNote");
-  if (note) {
-    const missing = [];
-    if (!isAddr(C.feeRecipient)) missing.push("<b>feeRecipient</b>");
-    if (!C.keeperApi) missing.push("<b>keeperApi</b>");
-    if (missing.length) {
-      note.hidden = false;
-      note.innerHTML = `Setup: fill in ${missing.join(" and ")} in <span class="mono">config.js</span>. Numbers stay at 0 until the first token is launched.`;
-    }
+  applyI18n();
+  wireMenu();
+  if (!isAddr(C.feeRecipient) || !C.keeperApi) {
+    console.info("[Feeverage] Setup: fill feeRecipient and keeperApi in config.js for live token data.");
   }
+  renderTicker();
   loadMarkets();
   connectPrices();
-  setInterval(loadMarkets, 30_000);
+  setInterval(loadMarkets, 20_000);
 }

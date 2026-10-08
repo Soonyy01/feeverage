@@ -12,6 +12,13 @@ window.FEEVERAGE_CONFIG = {
   // Leave empty to read launches straight from the chain (slower).
   keeperApi: "",
 
+  // Your X (Twitter) profile, shown at the bottom of the menu, e.g. "https://x.com/feeverage".
+  xUrl: "",
+
+  // Fees a token must collect before they are bridged and added to its position (USD).
+  // Keep this equal to MIN_BRIDGE_USD in the keeper's .env.
+  minTopUpUsd: 12,
+
   // Robinhood Chain
   chainId: 4663,
   rpc: "https://rpc.mainnet.chain.robinhood.com",

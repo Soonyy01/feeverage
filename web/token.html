@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Token · Feeverage</title>
+<script>try{var t=localStorage.getItem("feev.theme");if(t)document.documentElement.dataset.theme=t;var l=localStorage.getItem("feev.lang");if(l!=="en"&&l!=="zh")l=(navigator.language||"").toLowerCase().indexOf("zh")===0?"zh":"en";document.documentElement.lang=l;}catch(e){}</script>
 <meta name="description" content="Launch a token on Robinhood Chain. Its trading fees fund a leveraged Hyperliquid position.">
 <meta name="theme-color" content="#f4f2e8">
 <meta property="og:title" content="Feeverage — your token's fees. Leveraged.">
@@ -16,56 +17,67 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=JetBrains+Mono:wght@400;500;700&display=swap">
 <link rel="stylesheet" href="styles.css">
 </head>
-<body data-page="tokens">
+<body>
 
 <header class="top">
   <div class="wrap">
     <a class="brand" href="index.html" aria-label="Feeverage home">
-      <img src="assets/logo-96.png" alt="" width="38" height="38">
+      <img src="assets/logo-96.png" alt="" width="40" height="40">
       <span>FEEVERAGE</span>
     </a>
-    <nav class="links" aria-label="Main">
-      <a href="launch.html" data-page="launch">Launch</a>
-      <a href="tokens.html" data-page="tokens">Tokens</a>
-      <a href="stats.html" data-page="stats">Stats</a>
-      <a href="docs.html" data-page="docs">Docs</a>
-    </nav>
-    <button class="btn" id="connect" type="button" style="margin-left:auto">Connect</button>
+    <button class="btn menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="menu"><span class="burger" aria-hidden="true"></span><span data-i18n="menu">Menu</span></button>
+    <div class="menu" id="menu" hidden></div>
   </div>
 </header>
 
-<div class="ticker" aria-label="Hyperliquid prices">
+<div class="ticker" aria-label="Live prices">
   <div class="track" id="ticker"></div>
 </div>
 
 <main>
   <div class="wrap">
-    <div class="banner-note" id="setupNote" hidden></div>
     <section class="page-head">
-      <a class="label" href="tokens.html">← All tokens</a>
-      <div class="empty" id="missing" hidden style="margin-top:22px"><h3>Token not found</h3><p class="muted" style="margin-top:8px">It may still be loading, or it was not launched through Feeverage.</p><p style="margin-top:16px"><a class="btn" href="tokens.html">Browse tokens</a></p></div>
+      <a class="label" href="index.html#tokens" data-i18n="t.back">← All tokens</a>
+      <div class="empty" id="missing" hidden style="margin-top:22px"><h3 data-i18n="t.missing">Token not found</h3><p class="muted" style="margin-top:8px" data-i18n="t.missing.p"></p></div>
       <div id="page">
-        <div class="tok-hero" id="hero" style="margin-top:22px"><span class="ph">…</span><div><h1>Loading…</h1></div></div>
+        <div class="tok-hero" id="hero"><span class="tlogo">…</span><div><h1>…</h1></div></div>
         <div class="tok-grid">
           <div style="display:grid;gap:24px;min-width:0">
-            <dl class="mstats" id="mstats" style="margin:0"></dl>
+            <div class="panel health" id="healthBox">
+              <svg viewBox="0 0 130 76" aria-hidden="true">
+                <path d="M10 70 A55 55 0 0 1 120 70" fill="none" stroke="var(--hair)" stroke-width="12"/>
+                <path d="M10 70 A55 55 0 0 1 32 26" fill="none" stroke="var(--down)" stroke-width="12"/>
+                <path d="M32 26 A55 55 0 0 1 65 15" fill="none" stroke="var(--yellow)" stroke-width="12"/>
+                <path d="M65 15 A55 55 0 0 1 120 70" fill="none" stroke="var(--up)" stroke-width="12"/>
+                <line id="needle" x1="65" y1="70" x2="65" y2="22" stroke="var(--ink)" stroke-width="4" stroke-linecap="round" style="transform-origin:65px 70px;transition:transform .6s cubic-bezier(.2,.9,.25,1.2)"/>
+                <circle cx="65" cy="70" r="6" fill="var(--ink)"/>
+              </svg>
+              <div style="min-width:0">
+                <span class="label muted" data-i18n="t.health">Health</span>
+                <div class="word" id="hWord" style="margin-top:6px">—</div>
+                <div class="label" id="hDist" style="margin-top:6px"></div>
+              </div>
+            </div>
+            <dl class="mstats" id="mstats"></dl>
             <div class="panel" style="display:grid;gap:10px">
-              <span class="label">Bonding curve</span>
-              <div style="display:flex;height:14px;border:2.5px solid var(--ink)"><i id="curveBar" style="display:block;width:0;background:var(--yellow);transition:width .6s"></i></div>
+              <div class="row2"><span class="label" data-i18n="t.next">Next top-up</span><span class="label" id="nextTxt">—</span></div>
+              <div class="meter" style="height:14px"><i id="nextBar" style="width:0"></i></div>
+              <div class="row2" style="margin-top:8px"><span class="label" data-i18n="t.curve">Bonding curve</span><span class="label" id="curvePct">—</span></div>
+              <div class="meter" style="height:14px"><i id="curveBar" style="width:0"></i></div>
               <span class="label muted" id="curveText"></span>
             </div>
-            <div class="panel"><span class="label">About</span><p class="desc" id="desc" style="margin-top:10px"></p></div>
+            <div class="panel"><span class="label" data-i18n="t.about">About</span><p class="desc" id="desc" style="margin-top:10px"></p></div>
           </div>
           <aside class="panel" style="display:grid;gap:14px">
-            <span class="label">Trade</span>
+            <span class="label" data-i18n="t.trade">Trade</span>
             <div id="trade" style="display:grid;gap:14px">
-              <div class="seg" role="group" aria-label="Trade side"><button type="button" data-t="buy" aria-pressed="true">BUY</button><button type="button" data-t="sell" aria-pressed="false">SELL</button></div>
-              <label class="f" for="tAmt"><span id="tAmtLbl">Pay (ETH)</span><input id="tAmt" type="number" min="0" step="0.001" placeholder="0.001"></label>
-              <div class="label muted" id="tQuote">Enter an amount</div>
-              <button class="btn dark" id="tGo" type="button" style="width:100%">Buy</button>
+              <div class="seg" role="group" aria-label="Trade side"><button type="button" data-t="buy" aria-pressed="true" data-i18n="t.buy">Buy</button><button type="button" data-t="sell" aria-pressed="false" data-i18n="t.sell">Sell</button></div>
+              <label class="f" for="tAmt"><span id="tAmtLbl" data-i18n="t.pay">Pay (ETH)</span><input id="tAmt" type="number" min="0" step="0.001" placeholder="0.001"></label>
+              <div class="label muted" id="tQuote" data-i18n="t.quote">Enter an amount</div>
+              <button class="btn dark" id="tGo" type="button" style="width:100%" data-i18n="t.buy">Buy</button>
             </div>
-            <p class="note" id="gradNote" hidden>This token graduated and now trades on a Uniswap v4 pool on Robinhood Chain. Use any Robinhood Chain swap app with the contract address.</p>
-            <button class="btn ghost" id="push" type="button" hidden>Push fees to the position</button>
+            <p class="note" id="gradNote" hidden data-i18n="t.grad"></p>
+            <button class="btn ghost" id="push" type="button" hidden data-i18n="t.push">Push fees to the position</button>
             <div class="status" id="tStatus"></div>
             <dl class="kv" id="links"></dl>
           </aside>
@@ -79,8 +91,7 @@
   <div class="wrap">
     <img src="assets/logo-96.png" alt="" width="36" height="36">
     <span class="label">Robinhood × Hyperliquid</span>
-    <a href="docs.html">Docs</a>
-    <span class="label muted" style="margin-left:auto">Experimental. Leverage can go to zero.</span>
+    <span class="label muted" style="margin-left:auto" data-i18n="foot.risk">Experimental. Leverage can go to zero.</span>
   </div>
 </footer>
 
