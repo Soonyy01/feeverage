@@ -38,6 +38,8 @@ export const FACTORY_ABI = [
   "function canLaunch(address) view returns (bool)",
   "function maxCreatorTaxBps() view returns (uint256)",
   "function previewLaunchEconomics(uint256 launchConfigId,address pairToken) view returns (bytes32)",
+  "function poolManager() view returns (address)",
+  "function memeHook() view returns (address)",
   "function getLaunchedToken(address) view returns ((address token,address curve,address deployer,address creatorFeeRecipient,address pairToken,uint256 graduationThreshold,uint24 poolFee,int24 tickSpacing,uint16 creatorTaxBps,bool buybackEnabled,uint8 phase,uint256 sweptQuote,uint256 sweptTokens,uint256 sweptAt,bool exists))",
   "event TokenLaunched(address indexed token,address indexed curve,address indexed deployer,address pairToken,uint256 launchConfigId,uint256 graduationThreshold)",
 ];
@@ -82,6 +84,7 @@ export const compactUsd = (n) => {
 };
 export const signedUsd = (n) => (n > 0 ? "+" : "") + compactUsd(n);
 export const px = (n) => (n == null || !isFinite(n) ? "—" : n >= 1000 ? fmt(n, 0) : n >= 1 ? fmt(n, 2) : fmt(n, 5));
+export const ethPx = (p) => (p == null || !isFinite(p) ? "—" : (p >= 0.001 ? fmt(p, 6) : p.toExponential(3)) + " ETH");
 export const short = (a) => (a ? a.slice(0, 6) + "…" + a.slice(-4) : "");
 export const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 export const isAddr = (a) => /^0x[0-9a-fA-F]{40}$/.test(a ?? "");
@@ -273,30 +276,53 @@ async function fromKeeper() {
 }
 
 const FEES_SWEPT = E ? E.id("FeesSwept(uint256,uint256,uint256)") : null;
+const CURVE_BUY = E ? E.id("CurveBuy(address,address,uint256,uint256,uint256,uint256)") : null;
+const CURVE_SELL = E ? E.id("CurveSell(address,address,uint256,uint256,uint256,uint256)") : null;
+const POOL_REGISTERED = E ? E.id("PoolRegistered(bytes32,address,address,address)") : null;
+
+// getLogs over any range: starts with a wide window and narrows it when the RPC refuses.
+let span = 2_000_000;
+export async function scanLogs(filter, fromBlock, toBlock) {
+  const out = [];
+  let from = Math.max(0, fromBlock);
+  while (from <= toBlock) {
+    const to = Math.min(toBlock, from + span - 1);
+    try {
+      out.push(...(await provider.getLogs({ ...filter, fromBlock: from, toBlock: to })));
+      from = to + 1;
+      if (span < 2_000_000) span = Math.min(2_000_000, span * 2);
+    } catch (e) {
+      if (span <= 2_000) throw e;
+      span = Math.max(2_000, Math.floor(span / 5));
+    }
+  }
+  return out;
+}
+const abi = () => E.AbiCoder.defaultAbiCoder();
+const firstBlock = (x) => Number(x.block ?? x.launchedBlock ?? C.startBlock ?? 0) || Number(C.startBlock) || 0;
+
 async function addCurveFees(list) {
   const withCurve = list.filter((x) => x.curve);
   if (!withCurve.length) return;
   const latest = await provider.getBlockNumber();
-  const first = Math.min(...withCurve.map((x) => x.block || latest));
   const byCurve = new Map(withCurve.map((x) => [x.curve.toLowerCase(), x]));
   withCurve.forEach((x) => (x.feesEth = 0));
-  for (let from = first, n = 0; from <= latest && n < 60; from += 10_000, n++) {
-    const logs = await provider.getLogs({ address: [...byCurve.keys()], topics: [FEES_SWEPT], fromBlock: from, toBlock: Math.min(latest, from + 9_999) });
-    for (const l of logs) {
-      const [, , creator] = E.AbiCoder.defaultAbiCoder().decode(["uint256", "uint256", "uint256"], l.data);
-      const x = byCurve.get(l.address.toLowerCase());
-      if (x) x.feesEth += Number(E.formatEther(creator));
-    }
+  const logs = await scanLogs({ address: [...byCurve.keys()], topics: [FEES_SWEPT] }, Math.min(...withCurve.map(firstBlock)), latest);
+  for (const l of logs) {
+    const [, , creator] = abi().decode(["uint256", "uint256", "uint256"], l.data);
+    const x = byCurve.get(l.address.toLowerCase());
+    if (x) x.feesEth += Number(E.formatEther(creator));
   }
 }
 
 async function fromChain() {
   const latest = await provider.getBlockNumber();
-  const start = Math.max(C.startBlock || 0, latest - 300_000);
+  const start = Number(C.startBlock) || Math.max(0, latest - 5_000_000);
   const found = new Map();
-  for (let from = latest; from > start && found.size < 150; from -= 10_000) {
-    const logs = await factory.queryFilter(factory.filters.TokenLaunched(), Math.max(start, from - 9_999), from);
-    for (const l of logs) found.set(l.args.token.toLowerCase(), { token: l.args.token, curve: l.args.curve, deployer: l.args.deployer, block: l.blockNumber });
+  const logs = await scanLogs({ address: C.factory, topics: [factory.interface.getEvent("TokenLaunched").topicHash] }, start, latest);
+  for (const l of logs) {
+    const ev = factory.interface.parseLog(l);
+    found.set(ev.args.token.toLowerCase(), { token: ev.args.token, curve: ev.args.curve, deployer: ev.args.deployer, block: l.blockNumber });
   }
   for (const m of store.get("feeverage.launches", [])) if (!found.has(m.token.toLowerCase())) found.set(m.token.toLowerCase(), m);
   const out = [];
@@ -305,13 +331,60 @@ async function fromChain() {
     if (!info || info.creatorFeeRecipient.toLowerCase() !== C.feeRecipient.toLowerCase()) return;
     const tk = new E.Contract(x.token, TOKEN_ABI, provider);
     const [name, symbol, description] = await Promise.all([tk.name(), tk.symbol(), tk.description().catch(() => "")]);
-    const s = parseStrategy(description);
-    if (!s) return;
-    out.push({ token: x.token, curve: info.curve, deployer: info.deployer, name, symbol, description, ...s, block: x.block ?? 0, feesEth: null, pendingEth: null });
+    const st = parseStrategy(description);
+    if (!st) return;
+    out.push({ token: x.token, curve: info.curve, deployer: info.deployer, name, symbol, description, ...st, block: x.block ?? 0, feesEth: null, pendingEth: null });
   }));
   out.sort((a, b) => b.block - a.block);
   await addCurveFees(out);
   return out;
+}
+
+// ------------------------------------------------------------------ token prices (on-chain, live)
+// On the curve: spot = quoteReserve / tokenReserve. After graduation: read the Uniswap v4
+// pool's sqrtPriceX96 straight from the PoolManager (native ETH is always currency0).
+let v4 = null;
+async function v4Info() {
+  if (v4) return v4;
+  const [pm, hook] = await Promise.all([factory.poolManager(), factory.memeHook()]);
+  v4 = { pm: new E.Contract(pm, ["function extsload(bytes32 slot) view returns (bytes32)"], provider), hook };
+  return v4;
+}
+async function findPoolId(x) {
+  if (x.poolId) return x.poolId;
+  const { hook } = await v4Info();
+  const latest = await provider.getBlockNumber();
+  const logs = await scanLogs({ address: hook, topics: [POOL_REGISTERED] }, firstBlock(x), latest);
+  for (const l of logs) {
+    const [memecoin] = abi().decode(["address", "address", "address"], l.data);
+    if (memecoin.toLowerCase() === x.token.toLowerCase()) return (x.poolId = l.topics[1]);
+  }
+  return null;
+}
+async function poolPriceEth(x) {
+  const id = await findPoolId(x);
+  if (!id) return null;
+  const { pm } = await v4Info();
+  const slot = E.keccak256(E.concat([id, E.zeroPadValue("0x06", 32)]));
+  const word = BigInt(await pm.extsload(slot));
+  const sqrtP = word & ((1n << 160n) - 1n);
+  if (sqrtP === 0n) return null;
+  const tokensPerEth = Number((sqrtP * sqrtP * 10n ** 18n) >> 192n) / 1e18;
+  return tokensPerEth > 0 ? 1 / tokensPerEth : null;
+}
+export async function refreshTokenPrices(list) {
+  if (!chain.ok) return;
+  await Promise.all(list.filter((x) => x.curve || x.graduated).map(async (x) => {
+    try {
+      if (!x.graduated && x.curve) {
+        const res = await new E.Contract(x.curve, CURVE_ABI, provider).getReserves();
+        x.spotEth = res.tokenReserve > 0n ? Number(E.formatEther(res.quoteReserve)) / Number(E.formatEther(res.tokenReserve)) : null;
+      } else {
+        x.spotEth = await poolPriceEth(x);
+      }
+      if (x.spotEth != null && x.supply) x.mcapEth = x.spotEth * x.supply;
+    } catch {}
+  }));
 }
 
 async function enrichChain(list) {
@@ -333,7 +406,8 @@ async function enrichChain(list) {
           x.progress = g ? 1 : Number(real) / Number(thr || 1n);
           x.reserveEth = Number(E.formatEther(real));
           x.thresholdEth = Number(E.formatEther(thr));
-          x.spotEth = res.tokenReserve > 0n ? Number(E.formatEther(res.quoteReserve)) / Number(E.formatEther(res.tokenReserve)) : null;
+          x.spotEth = g ? await poolPriceEth(x).catch(() => null)
+            : res.tokenReserve > 0n ? Number(E.formatEther(res.quoteReserve)) / Number(E.formatEther(res.tokenReserve)) : null;
         } catch {}
       })());
     }
@@ -391,6 +465,65 @@ export function totals(tokens) {
     feesEth: sum("feesEth"), feesUsd: sum("feesUsd"),
     equityUsd: sum("equityUsd"), notionalUsd: sum("notionalUsd"), pnlUsd: sum("pnlUsd"),
     longs: tokens.filter((x) => x.isLong).length, shorts: tokens.filter((x) => !x.isLong).length,
+  };
+}
+
+// ------------------------------------------------------------------ a wallet's holdings
+// Balance from the token contract; cost basis from the wallet's own CurveBuy / CurveSell
+// events on that token's curve. Values are marked to the live on-chain token price.
+export async function loadHoldings(user, tokens) {
+  if (!chain.ok || !isAddr(user)) return [];
+  const latest = await provider.getBlockNumber();
+  const me = E.zeroPadValue(user.toLowerCase(), 32);
+  const cacheKey = `feev.trades.${user.toLowerCase()}`;
+  const cache = store.get(cacheKey, {});
+  const out = [];
+  await Promise.all(tokens.map(async (x) => {
+    const tk = new E.Contract(x.token, TOKEN_ABI, provider);
+    const balance = Number(E.formatEther(await tk.balanceOf(user).catch(() => 0n)));
+    const c = cache[x.token.toLowerCase()] ?? { from: firstBlock(x), buys: [], sells: [] };
+    if (x.curve && c.from <= latest) {
+      try {
+        const [buys, sells] = await Promise.all([
+          scanLogs({ address: x.curve, topics: [CURVE_BUY, null, me] }, c.from, latest),
+          scanLogs({ address: x.curve, topics: [CURVE_SELL, me] }, c.from, latest),
+        ]);
+        for (const l of buys) {
+          const [quoteIn, tokensOut] = abi().decode(["uint256", "uint256", "uint256", "uint256"], l.data);
+          c.buys.push({ eth: Number(E.formatEther(quoteIn)), tokens: Number(E.formatEther(tokensOut)), tx: l.transactionHash, block: l.blockNumber });
+        }
+        for (const l of sells) {
+          const [tokensIn, quoteOut] = abi().decode(["uint256", "uint256", "uint256", "uint256"], l.data);
+          c.sells.push({ eth: Number(E.formatEther(quoteOut)), tokens: Number(E.formatEther(tokensIn)), tx: l.transactionHash, block: l.blockNumber });
+        }
+        c.from = latest + 1;
+        cache[x.token.toLowerCase()] = c;
+      } catch {}
+    }
+    if (balance <= 0 && !c.buys.length && !c.sells.length) return;
+    const spent = c.buys.reduce((a, b) => a + b.eth, 0);
+    const bought = c.buys.reduce((a, b) => a + b.tokens, 0);
+    const received = c.sells.reduce((a, b) => a + b.eth, 0);
+    const sold = c.sells.reduce((a, b) => a + b.tokens, 0);
+    out.push({ ...x, balance, spentEth: spent, boughtTokens: bought, receivedEth: received, soldTokens: sold,
+      avgEth: bought > 0 ? spent / bought : null, trades: [...c.buys.map((b) => ({ ...b, side: "buy" })), ...c.sells.map((b) => ({ ...b, side: "sell" }))] });
+  }));
+  store.set(cacheKey, cache);
+  return out;
+}
+
+// Live marks for one holding (ETH and USD).
+export function holdingLive(h) {
+  const ethPx = market.ETH?.px ?? 0;
+  const valueEth = h.spotEth != null ? h.balance * h.spotEth : null;
+  const costLeft = h.avgEth != null ? h.balance * h.avgEth : null;
+  const pnlEth = valueEth != null && h.spentEth > 0 ? valueEth + h.receivedEth - h.spentEth : null;
+  return {
+    valueEth, valueUsd: valueEth != null ? valueEth * ethPx : null,
+    pnlEth, pnlUsd: pnlEth != null ? pnlEth * ethPx : null,
+    pnlPct: pnlEth != null && h.spentEth > 0 ? (pnlEth / h.spentEth) * 100 : null,
+    moveSinceEntry: h.avgEth && h.spotEth != null ? ((h.spotEth - h.avgEth) / h.avgEth) * 100 : null,
+    costLeftEth: costLeft,
   };
 }
 
@@ -522,14 +655,12 @@ const theme = () => (document.documentElement.dataset.theme === "dark" ? "dark" 
 function renderMenu() {
   const m = $("menu");
   if (!m) return;
-  const w = wallet.state;
-  const connected = w.authenticated && w.address;
   const xUrl = C.xUrl;
   const xHandle = xUrl ? "@" + xUrl.replace(/\/+$/, "").split("/").pop() : t("m.x.none");
   m.innerHTML = `
     <a class="mi" href="launch.html"><b>${t("m.launch")}</b><small>${t("m.launch.s")}</small></a>
     <a class="mi" href="docs.html"><b>${t("m.docs")}</b><small>${t("m.docs.s")}</small></a>
-    <button class="mi" type="button" id="menuWallet"><b>${connected ? t("m.disconnect") : t("m.connect")}</b><small>${connected ? short(w.address) : w.mode === "loading" ? t("m.loading") : t("m.connect.s")}</small></button>
+    <a class="mi" href="positions.html"><b>${t("m.positions")}</b><small>${t("m.positions.s")}</small></a>
     <div class="mi static"><b>${t("m.lang")}</b><span class="toggle"><button type="button" data-lang="en" aria-pressed="${getLang() === "en"}">EN</button><button type="button" data-lang="zh" aria-pressed="${getLang() === "zh"}">中文</button></span></div>
     <div class="mi static"><b>${t("m.theme")}</b><span class="toggle"><button type="button" data-theme-set="light" aria-pressed="${theme() === "light"}">${t("m.light")}</button><button type="button" data-theme-set="dark" aria-pressed="${theme() === "dark"}">${t("m.dark")}</button></span></div>
     <a class="mi x ${xUrl ? "" : "off"}" href="${xUrl ? esc(xUrl) : "#"}" target="_blank" rel="noopener">${X_ICON}<small>${esc(xHandle)}</small></a>`;
@@ -542,6 +673,7 @@ function wireMenu() {
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     const open = m.hidden;
+    if ($("walletMenu")) { $("walletMenu").hidden = true; $("walletBtn")?.setAttribute("aria-expanded", "false"); }
     if (open) renderMenu();
     m.hidden = !open;
     btn.setAttribute("aria-expanded", String(open));
@@ -553,21 +685,55 @@ function wireMenu() {
     if (l) { setLang(l.dataset.lang); renderMenu(); return; }
     const th = e.target.closest("[data-theme-set]");
     if (th) { setTheme(th.dataset.themeSet); renderMenu(); return; }
-    if (e.target.closest("#menuWallet")) {
-      close();
-      try {
-        if (wallet.state.authenticated) await wallet.disconnect();
-        else await wallet.connect();
-      } catch (err) { console.warn(err); }
+  });
+}
+
+// ------------------------------------------------------------------ wallet button (next to Menu)
+function wireWallet() {
+  const b = $("walletBtn"), wm = $("walletMenu");
+  if (!b || !wm) return;
+  const close = () => { wm.hidden = true; b.setAttribute("aria-expanded", "false"); };
+  const paint = () => {
+    const w = wallet.state;
+    const on = w.authenticated && w.address;
+    b.innerHTML = on ? `<span class="sq live"></span>${short(w.address)}` : w.mode === "loading" ? t("m.loading") : t("m.connect");
+    b.classList.toggle("ghost", Boolean(on));
+    b.disabled = w.mode === "loading";
+    wm.innerHTML = on ? `
+      <a class="mi" href="positions.html"><b>${t("m.positions")}</b><small>${short(w.address)}</small></a>
+      <button class="mi" type="button" data-copy-addr="${w.address}"><b>${t("w.copy")}</b><small>${short(w.address)}</small></button>
+      <a class="mi" href="${C.explorer}/address/${w.address}" target="_blank" rel="noopener"><b>${t("w.explorer")}</b><small>↗</small></a>
+      <button class="mi x" type="button" data-disconnect><b>${t("m.disconnect")}</b><small></small></button>` : "";
+  };
+  wallet.onChange(paint);
+  addEventListener("langchange", paint);
+  b.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const w = wallet.state;
+    if (w.authenticated && w.address) {
+      const open = wm.hidden;
+      wm.hidden = !open;
+      b.setAttribute("aria-expanded", String(open));
+      $("menu").hidden = true;
+      $("menuBtn")?.setAttribute("aria-expanded", "false");
+    } else {
+      try { await wallet.connect(); } catch (err) { console.warn(err); }
     }
   });
-  wallet.onChange(() => { if (!m.hidden) renderMenu(); });
+  document.addEventListener("click", (e) => { if (!wm.hidden && !wm.contains(e.target)) close(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  wm.addEventListener("click", async (e) => {
+    const cp = e.target.closest("[data-copy-addr]");
+    if (cp) { try { await navigator.clipboard.writeText(cp.dataset.copyAddr); cp.querySelector("small").textContent = t("card.copy") + " ✓"; } catch {} return; }
+    if (e.target.closest("[data-disconnect]")) { close(); await wallet.disconnect(); }
+  });
 }
 
 // ------------------------------------------------------------------ boot
 export function initShell() {
   applyI18n();
   wireMenu();
+  wireWallet();
   if (!isAddr(C.feeRecipient) || !C.keeperApi) {
     console.info("[Feeverage] Setup: fill feeRecipient and keeperApi in config.js for live token data.");
   }

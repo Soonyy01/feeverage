@@ -25,7 +25,11 @@
       <img src="assets/logo-96.png" alt="" width="40" height="40">
       <span>FEEVERAGE</span>
     </a>
-    <button class="btn menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="menu"><span class="burger" aria-hidden="true"></span><span data-i18n="menu">Menu</span></button>
+    <div class="actions">
+      <button class="btn" id="walletBtn" type="button" aria-expanded="false" aria-controls="walletMenu" data-i18n="m.connect">Connect wallet</button>
+      <button class="btn menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="menu"><span class="burger" aria-hidden="true"></span><span data-i18n="menu">Menu</span></button>
+    </div>
+    <div class="menu wallet-menu" id="walletMenu" hidden></div>
     <div class="menu" id="menu" hidden></div>
   </div>
 </header>
@@ -51,6 +55,7 @@
         <a href="#en-graduation">Curve & graduation</a>
         <a href="#en-trading">Buying & selling</a>
         <a href="#en-tokens">Token list</a>
+        <a href="#en-positions">Your positions</a>
         <a href="#en-contracts">Contracts</a>
         <a href="#en-risks">Risks</a>
         <a href="#en-faq">FAQ</a>
@@ -72,7 +77,7 @@
 
         <h2 id="en-start">Getting started</h2>
         <ol>
-          <li>Open the <b>Menu</b> in the top-right corner and choose <b>Connect wallet</b>. You can sign in with MetaMask, Rabby, Coinbase Wallet, OKX Wallet, WalletConnect, or with email, Google or X. If you sign in without a wallet, one is created for you.</li>
+          <li>Press <b>Connect wallet</b> in the top-right corner, next to the <b>Menu</b>. You can sign in with MetaMask, Rabby, Coinbase Wallet, OKX Wallet, WalletConnect, or with email, Google or X. If you sign in without a wallet, one is created for you.</li>
           <li>Make sure the wallet has some ETH on Robinhood Chain for the launch fee, your first buy and gas.</li>
           <li>Choose <b>Launch</b> in the menu to create a token, or scroll the home page to browse and trade existing ones.</li>
         </ol>
@@ -167,6 +172,18 @@
         <h2 id="en-tokens">Token list</h2>
         <p>The home page lists every Feeverage token. Sort by <b>Newest</b>, <b>Live positions</b>, <b>Top PnL</b>, <b>Top MCAP</b>, <b>Most funded</b>, <b>Next top-up</b> or <b>Graduated</b>, filter by <b>All</b>, <b>Long</b> or <b>Short</b>, and search by ticker, name, market or address. Each card shows the strategy, live PnL, market cap, funding and progress to the next top-up. Tap the address to copy it.</p>
 
+        <h2 id="en-positions">Your positions</h2>
+        <p>Once your wallet is connected, the wallet button shows your address. Open it, or choose <b>Positions</b> in the menu, to see every Feeverage token you hold.</p>
+        <ul>
+          <li><b>ETH balance</b> of your wallet on Robinhood Chain.</li>
+          <li><b>Balance</b> of each token, read from the token contract.</li>
+          <li><b>Price</b> of each token, read from its bonding curve, or from its Uniswap v4 pool after graduation, refreshed every 10 seconds.</li>
+          <li><b>Average entry</b>, from your own buys on the token's curve.</li>
+          <li><b>Value</b> and <b>PnL</b> in USD, re-marked every second with the live ETH price, plus how far the token has moved since your entry.</li>
+          <li>Your <b>trade history</b>, with a link to every transaction.</li>
+        </ul>
+        <p>Entry price and PnL count trades made on Feeverage bonding curves. Tokens you received another way show their value but no entry price.</p>
+
         <h2 id="en-contracts">Contracts</h2>
         <div class="tbl"><table>
           <thead><tr><th>Contract</th><th>Address</th></tr></thead>
@@ -217,6 +234,7 @@
         <a href="#zh-graduation">曲线与毕业</a>
         <a href="#zh-trading">买入与卖出</a>
         <a href="#zh-tokens">代币列表</a>
+        <a href="#zh-positions">你的持仓</a>
         <a href="#zh-contracts">合约</a>
         <a href="#zh-risks">风险</a>
         <a href="#zh-faq">常见问题</a>
@@ -238,7 +256,7 @@
 
         <h2 id="zh-start">快速开始</h2>
         <ol>
-          <li>打开右上角的 <b>菜单</b>，选择 <b>连接钱包</b>。可以使用 MetaMask、Rabby、Coinbase Wallet、OKX Wallet、WalletConnect，也可以用邮箱、Google 或 X 登录。没有钱包的话会自动为你创建一个。</li>
+          <li>点击右上角 <b>菜单</b> 旁边的 <b>连接钱包</b>。可以使用 MetaMask、Rabby、Coinbase Wallet、OKX Wallet、WalletConnect，也可以用邮箱、Google 或 X 登录。没有钱包的话会自动为你创建一个。</li>
           <li>确保钱包里有 Robinhood Chain 上的 ETH，用于支付发射费、首笔买入和 gas。</li>
           <li>在菜单中选择 <b>发射</b> 来创建代币，或者在首页浏览和交易已有的代币。</li>
         </ol>
@@ -332,6 +350,18 @@
 
         <h2 id="zh-tokens">代币列表</h2>
         <p>首页列出所有 Feeverage 代币。可以按 <b>最新</b>、<b>持仓中</b>、<b>盈亏最高</b>、<b>市值最高</b>、<b>注资最多</b>、<b>即将加仓</b> 或 <b>已毕业</b> 排序，按 <b>全部</b>、<b>做多</b> 或 <b>做空</b> 筛选，并可按代码、名称、市场或地址搜索。每张卡片显示策略、实时盈亏、市值、注资情况和距下次加仓的进度。点击地址即可复制。</p>
+
+        <h2 id="zh-positions">你的持仓</h2>
+        <p>连接钱包后，钱包按钮会显示你的地址。点击它，或在菜单中选择 <b>持仓</b>，即可查看你持有的所有 Feeverage 代币。</p>
+        <ul>
+          <li>你在 Robinhood Chain 上的 <b>ETH 余额</b>。</li>
+          <li>每个代币的 <b>余额</b>，直接从代币合约读取。</li>
+          <li>每个代币的 <b>价格</b>，从联合曲线读取，毕业后从 Uniswap v4 池读取，每 10 秒刷新一次。</li>
+          <li><b>平均成本</b>，根据你在该代币曲线上的买入计算。</li>
+          <li>以美元计的 <b>价值</b> 和 <b>盈亏</b>，每秒按实时 ETH 价格重新计算，并显示相对你成本价的涨跌幅。</li>
+          <li>你的 <b>交易记录</b>，每笔都附有交易链接。</li>
+        </ul>
+        <p>成本价和盈亏只统计在 Feeverage 联合曲线上的交易。通过其他方式获得的代币会显示价值，但没有成本价。</p>
 
         <h2 id="zh-contracts">合约</h2>
         <div class="tbl"><table>

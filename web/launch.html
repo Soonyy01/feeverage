@@ -25,7 +25,11 @@
       <img src="assets/logo-96.png" alt="" width="40" height="40">
       <span>FEEVERAGE</span>
     </a>
-    <button class="btn menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="menu"><span class="burger" aria-hidden="true"></span><span data-i18n="menu">Menu</span></button>
+    <div class="actions">
+      <button class="btn" id="walletBtn" type="button" aria-expanded="false" aria-controls="walletMenu" data-i18n="m.connect">Connect wallet</button>
+      <button class="btn menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="menu"><span class="burger" aria-hidden="true"></span><span data-i18n="menu">Menu</span></button>
+    </div>
+    <div class="menu wallet-menu" id="walletMenu" hidden></div>
     <div class="menu" id="menu" hidden></div>
   </div>
 </header>

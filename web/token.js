@@ -1,6 +1,6 @@
 import {
-  $, C, CURVE_ABI, E, TOKEN_ABI, chain, compactUsd, errMsg, esc, fmt, initShell, isAddr, live, loadTokens,
-  onMarkets, provider, px, readChain, short, stripTag, t, tokenLogo, usd, wallet,
+  $, C, CURVE_ABI, E, TOKEN_ABI, chain, compactUsd, errMsg, esc, ethPx, fmt, holdingLive, initShell, isAddr, live, loadHoldings, loadTokens,
+  onMarkets, provider, px, readChain, refreshTokenPrices, short, stripTag, t, tokenLogo, usd, wallet,
 } from "./core.js";
 
 initShell();
@@ -84,6 +84,29 @@ function tickLive(force) {
   $("hWord").style.color = !x.open ? "var(--muted)" : d == null || d > 0.12 ? "var(--up)" : d > 0.05 ? "var(--ink)" : "var(--down)";
   $("hDist").textContent = dist;
   $("needle").style.transform = `rotate(${deg}deg)`;
+  paintYou();
+}
+
+// ------------------------------------------------------------------ the connected wallet's own position
+let mine = null;
+async function loadMine() {
+  const w = wallet.state;
+  if (!raw || !(w.authenticated && w.address)) { mine = null; $("youBox").hidden = true; return; }
+  const [h] = await loadHoldings(w.address, [raw]);
+  mine = h ?? { balance: 0, spentEth: 0, receivedEth: 0, avgEth: null };
+  $("youBox").hidden = false;
+  paintYou();
+}
+function paintYou() {
+  if (!mine || !raw) return;
+  if (!(mine.balance > 0) && !(mine.spentEth > 0)) { $("you").innerHTML = `<div style="grid-column:1/-1;border:0"><dd class="muted" style="font-weight:500">${t("t.you.none")}</dd></div>`; return; }
+  const L = holdingLive({ ...mine, spotEth: raw.spotEth });
+  const c = (n) => (n > 0 ? "pos" : n < 0 ? "neg" : "");
+  $("you").innerHTML = `
+    <div><dt>${t("p.bal")}</dt><dd>${fmt(mine.balance, mine.balance >= 1000 ? 0 : 2)}</dd></div>
+    <div><dt>${t("p.val")}</dt><dd>${L.valueUsd != null ? usd(L.valueUsd) : "—"}</dd></div>
+    <div><dt>${t("p.avg")}</dt><dd>${ethPx(mine.avgEth)}</dd></div>
+    <div><dt>${t("p.ret")}</dt><dd class="${c(L.pnlUsd)}">${L.pnlUsd != null ? (L.pnlUsd > 0 ? "+" : "") + usd(L.pnlUsd) + ` (${L.pnlPct > 0 ? "+" : ""}${fmt(L.pnlPct, 1)}%)` : "—"}</dd></div>`;
 }
 
 // ------------------------------------------------------------------ trade
@@ -141,7 +164,7 @@ $("tGo").addEventListener("click", async () => {
       await (await c.sell(amt, (out * 97n) / 100n, me)).wait();
     }
     st.className = "status ok"; st.textContent = t("t.done");
-    load();
+    await load();
   } catch (e) {
     st.className = "status err"; st.innerHTML = errMsg(e);
   }
@@ -172,8 +195,11 @@ async function load() {
   $("page").hidden = !raw;
   render();
   requote();
+  loadMine();
 }
-wallet.onChange(render);
+wallet.onChange(() => { render(); loadMine(); });
+// The token's on-chain price, every 10 seconds.
+setInterval(async () => { if (raw) { await refreshTokenPrices([raw]); tickLive(false); } }, 10_000);
 onMarkets(() => tickLive(false));
 addEventListener("langchange", render);
 load();

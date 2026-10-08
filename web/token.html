@@ -25,7 +25,11 @@
       <img src="assets/logo-96.png" alt="" width="40" height="40">
       <span>FEEVERAGE</span>
     </a>
-    <button class="btn menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="menu"><span class="burger" aria-hidden="true"></span><span data-i18n="menu">Menu</span></button>
+    <div class="actions">
+      <button class="btn" id="walletBtn" type="button" aria-expanded="false" aria-controls="walletMenu" data-i18n="m.connect">Connect wallet</button>
+      <button class="btn menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="menu"><span class="burger" aria-hidden="true"></span><span data-i18n="menu">Menu</span></button>
+    </div>
+    <div class="menu wallet-menu" id="walletMenu" hidden></div>
     <div class="menu" id="menu" hidden></div>
   </div>
 </header>
@@ -69,6 +73,10 @@
             <div class="panel"><span class="label" data-i18n="t.about">About</span><p class="desc" id="desc" style="margin-top:10px"></p></div>
           </div>
           <aside class="panel" style="display:grid;gap:14px">
+            <div id="youBox" hidden style="display:grid;gap:10px">
+              <span class="label" data-i18n="t.you">Your position</span>
+              <dl class="you" id="you" style="margin:0"></dl>
+            </div>
             <span class="label" data-i18n="t.trade">Trade</span>
             <div id="trade" style="display:grid;gap:14px">
               <div class="seg" role="group" aria-label="Trade side"><button type="button" data-t="buy" aria-pressed="true" data-i18n="t.buy">Buy</button><button type="button" data-t="sell" aria-pressed="false" data-i18n="t.sell">Sell</button></div>

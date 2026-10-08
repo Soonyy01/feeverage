@@ -1,5 +1,5 @@
 import {
-  $, bars, esc, initShell, live, loadTokens, onMarkets, readChain, refreshCards, statBlock, t, tokenCard, totals, wireCards,
+  $, bars, esc, initShell, live, loadTokens, onMarkets, readChain, refreshCards, refreshTokenPrices, statBlock, t, tokenCard, totals, wireCards,
 } from "./core.js";
 
 initShell();
@@ -108,6 +108,13 @@ onMarkets(() => {
   paintStats(tokens, true);
   refreshCards($("cards"), byToken);
 });
+
+// Token prices (market caps) from the chain every 10 seconds.
+setInterval(async () => {
+  if (!tokens.length) return;
+  await refreshTokenPrices(tokens);
+  refreshCards($("cards"), byToken);
+}, 10_000);
 
 renderViews();
 renderCards();

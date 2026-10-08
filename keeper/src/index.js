@@ -242,7 +242,7 @@ async function buildStatus(ethPrice) {
     const pos = hl?.positions.find((p) => p.coin === r.market);
     const t = {
       index: r.index, token: r.token, curve: r.curve, deployer: r.deployer, name: r.name, symbol: r.symbol,
-      market: r.market, isLong: r.isLong, leverage: r.leverage, hlAccount: r.hlAccount, graduated: Boolean(r.poolId),
+      market: r.market, isLong: r.isLong, leverage: r.leverage, hlAccount: r.hlAccount, graduated: Boolean(r.poolId), poolId: r.poolId,
       launchedBlock: r.launchedBlock,
       feesEth: Number(formatEther(BigInt(ts.creditedWei))),
       pendingEth: Number(formatEther(pendingWei(ts))),
