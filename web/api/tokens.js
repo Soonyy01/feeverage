@@ -5,7 +5,7 @@
 // GET /api/tokens?fee=0x...&from=<startBlock>
 import { ethers } from "ethers";
 
-const RPCS = [process.env.BSC_RPC, "https://bsc-rpc.publicnode.com", "https://bsc-dataseed.bnbchain.org", "https://bsc-dataseed1.binance.org"].filter(Boolean);
+const RPCS = [process.env.BSC_RPC, "https://bsc-rpc.publicnode.com", "https://bsc.drpc.org", "https://1rpc.io/bnb", "https://binance.llamarpc.com", "https://bsc-dataseed.bnbchain.org"].filter(Boolean);
 const PORTAL = "0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0";
 const HELPER = "0x53841c73217735F37BC1775538b03b23feFD8346";
 const MULTICALL = "0xcA11bde05977b3631167028862bE2a173976CA11";
@@ -17,13 +17,17 @@ const TOPIC = P.getEvent("TokenCreated").topicHash;
 const TAG = /feeverage:[A-Z0-9]{1,12}:[LS]:\d{1,2}\b/;
 const BUDGET_MS = 45_000;
 
+// Public BNB Chain endpoints that serve eth_getLogs (bsc-dataseed does not, so it is last).
+let good = 0;
 async function rpc(method, params) {
   let err;
-  for (const url of RPCS) {
+  for (let k = 0; k < RPCS.length; k++) {
+    const i = (good + k) % RPCS.length;
     try {
-      const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), signal: AbortSignal.timeout(10000) });
+      const r = await fetch(RPCS[i], { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), signal: AbortSignal.timeout(8000) });
       const j = await r.json();
       if (j.error) throw new Error(j.error.message);
+      good = i;
       return j.result;
     } catch (e) { err = e; }
   }
@@ -31,27 +35,46 @@ async function rpc(method, params) {
 }
 
 // Kept between requests while the function instance stays warm.
-const cache = globalThis.__feevBsc ??= { scanned: 0, from: 0, launches: [], verdict: new Map() };
+// Covered range is [lo, hi]. New blocks are read first, then older ones, so the newest
+// launches show up on the very first request even when the history is long.
+const cache = globalThis.__feevBsc2 ??= { from: -1, lo: 0, hi: 0, launches: [], seen: new Set(), verdict: new Map() };
 
-async function scan(to, deadline) {
-  let span = 5000;
-  while (cache.scanned < to && Date.now() < deadline) {
-    const start = cache.scanned + 1, end = Math.min(to, start + span - 1);
-    try {
-      const logs = await rpc("eth_getLogs", [{ address: PORTAL, topics: [TOPIC], fromBlock: ethers.toQuantity(start), toBlock: ethers.toQuantity(end) }]);
-      for (const l of logs) {
-        try {
-          const ev = P.parseLog(l);
-          cache.launches.push({ token: ev.args.token, deployer: ev.args.creator, name: ev.args.name, symbol: ev.args.symbol, meta: ev.args.meta, block: Number(l.blockNumber) });
-        } catch {}
-      }
-      cache.scanned = end;
-      if (span < 5000) span = Math.min(5000, span * 2);
-    } catch (e) {
-      if (span <= 250) throw e;
-      span = Math.floor(span / 4);
-    }
+async function logs(start, end) {
+  try {
+    return await rpc("eth_getLogs", [{ address: PORTAL, topics: [TOPIC], fromBlock: ethers.toQuantity(start), toBlock: ethers.toQuantity(end) }]);
+  } catch (e) {
+    if (end - start < 200) throw e;
+    const mid = Math.floor((start + end) / 2);
+    return [...(await logs(start, mid)), ...(await logs(mid + 1, end))];
   }
+}
+
+function keep(list) {
+  for (const l of list) {
+    try {
+      const ev = P.parseLog(l);
+      const key = ev.args.token.toLowerCase();
+      if (cache.seen.has(key)) continue;
+      cache.seen.add(key);
+      cache.launches.push({ token: ev.args.token, deployer: ev.args.creator, name: ev.args.name, symbol: ev.args.symbol, meta: ev.args.meta, block: Number(l.blockNumber) });
+    } catch {}
+  }
+}
+
+const SPAN = 5000;
+async function scan(from, latest, deadline) {
+  if (cache.from !== from) Object.assign(cache, { from, lo: latest + 1, hi: latest, launches: [], seen: new Set() });
+  while (cache.hi < latest && Date.now() < deadline) {
+    const end = Math.min(latest, cache.hi + SPAN);
+    keep(await logs(cache.hi + 1, end));
+    cache.hi = end;
+  }
+  while (cache.lo > from && Date.now() < deadline) {
+    const start = Math.max(from, cache.lo - SPAN);
+    keep(await logs(start, cache.lo - 1));
+    cache.lo = start;
+  }
+  return cache.lo <= from && cache.hi >= latest;
 }
 
 // Which candidates send their tax to our operator? One Multicall3 call per 150 tokens.
@@ -91,10 +114,12 @@ export default async function handler(req, res) {
   const deadline = Date.now() + BUDGET_MS;
   try {
     const latest = Number(await rpc("eth_blockNumber", []));
-    // Without a start block, look back about four days.
-    const from = Number(q.get("from") || process.env.START_BLOCK || 0) || Math.max(0, latest - 450_000);
-    if (cache.from !== from) { cache.from = from; cache.scanned = from - 1; cache.launches = []; }
-    await scan(latest, deadline);
+    // Without a start block, look back ~450k blocks, fixed once per instance so the cache holds.
+    const asked = Number(q.get("from") || process.env.START_BLOCK || 0);
+    const from = asked || (cache.from >= 0 && !cache.asked ? cache.from : Math.max(0, latest - 450_000));
+    cache.asked = !!asked;
+    let done = false;
+    try { done = await scan(from, latest, deadline); } catch {} // keep what was read so far
     const ours = await filterByFee(cache.launches, fee);
     const tokens = [];
     await Promise.all(ours.map(async (x) => {
@@ -109,9 +134,8 @@ export default async function handler(req, res) {
       if (v) tokens.push(v);
     }));
     tokens.sort((a, b) => b.block - a.block);
-    const done = cache.scanned >= latest;
     res.setHeader("cache-control", done ? "public, s-maxage=15, stale-while-revalidate=60" : "no-store");
-    res.end(JSON.stringify({ latest, scannedTo: cache.scanned, complete: done, launches: cache.launches.length, tokens }));
+    res.end(JSON.stringify({ latest, covered: [cache.lo, cache.hi], complete: done, launches: cache.launches.length, tokens }));
   } catch (e) {
     res.statusCode = 502;
     res.end(JSON.stringify({ error: String(e?.message || e) }));
