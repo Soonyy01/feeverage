@@ -32,13 +32,10 @@ window.FEEVERAGE_CONFIG = {
   taxHelper: "0x53841c73217735F37BC1775538b03b23feFD8346",
   // Trade tax choices offered at launch (%), all of it funds the position.
   taxOptions: [1, 3, 5, 10],
-  // First block to look for launches (set it to the block of the day you go live).
-  startBlock: 126550000,
-  // Position of tokens launched before the strategy was also stored in the salt
-  // (lowercase address → "MARKET:L|S:leverage"). Only needed when IPFS can't be read.
-  strategies: {
-    "0x28ba97127772f81fc000beb38160e85150c97777": "BNB:L:3", // $CZ
-  },
+  // Feeverage router: every launch goes through it (deployed once with keeper/src/deploy-router.js).
+  // Fill in the address and the block number that the deploy script prints.
+  router: "0x7fe20fec21dcfd587cd072d2cea2705bae898fdb",
+  routerBlock: 126678606,
 
   // Hyperliquid
   hlInfo: "https://api.hyperliquid.xyz/info",

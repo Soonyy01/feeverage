@@ -59,7 +59,7 @@ export function toToken(l) {
 
 export async function segment(router, a, b) {
   const parts = [];
-  for (let x = a; x <= b; x += 10_000) parts.push([x, Math.min(b, x + 9_999)]);
+  for (let x = a; x <= b; x += 5_000) parts.push([x, Math.min(b, x + 4_999)]);
   const logs = (await Promise.all(parts.map(([x, y]) => rpc("eth_getLogs", [{ address: router, topics: [TOPIC], fromBlock: ethers.toQuantity(x), toBlock: ethers.toQuantity(y) }])))).flat();
   return logs.map((l) => { try { return toToken(l); } catch { return null; } }).filter(Boolean);
 }

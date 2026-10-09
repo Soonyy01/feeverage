@@ -1,5 +1,5 @@
 import {
-  $, C, E, KEY, NATIVE, PORTAL_ABI, TOKEN_ABI, TOKEN_TAXED_V3, ZERO, bars, chain, errMsg, esc, fmt, initShell, isAddr, market,
+  $, C, E, KEY, NATIVE, PORTAL_ABI, ROUTER_ABI, TOKEN_ABI, TOKEN_TAXED_V3, ZERO, bars, chain, errMsg, esc, fmt, initShell, isAddr, market,
   onMarkets, provider, px, readChain, recordTrade, saltPrefix, store, strategyLine, t, tokenUrl, wallet,
 } from "./core.js";
 
@@ -197,6 +197,7 @@ $("launchForm").addEventListener("submit", async (ev) => {
   const buyEth = Number($("buy").value) || 0;
   if (!E) return setStatus("ethers did not load. Check your connection and reload.", "err");
   if (!isAddr(C.feeRecipient)) return setStatus(t("l.e.fee"), "err");
+  if (!isAddr(C.router)) return setStatus(t("l.e.router"), "err");
   if (!name || !symbol) return setStatus(t("l.e.name"), "err");
   if (!(buyEth >= 0)) return setStatus(t("l.e.buy"), "err");
 
@@ -236,20 +237,22 @@ $("launchForm").addEventListener("submit", async (ev) => {
       commissionReceiver: C.feeRecipient,
       tokenVersion: TOKEN_TAXED_V3,
     };
-    const portalW = new E.Contract(C.portal, PORTAL_ABI, signer);
+    // Through the Feeverage router: it launches on flap.sh and records the position.
+    const routerW = new E.Contract(C.router, ROUTER_ABI, signer);
+    const args = [params, strat.market, strat.isLong, strat.leverage];
     setStatus(t("l.s.sim"));
-    await portalW.newTokenV6.staticCall(params, { value: quoteAmt });
+    await routerW.launch.staticCall(...args, { value: quoteAmt });
     setStatus(t("l.s.confirm"));
-    const tx = await portalW.newTokenV6(params, { value: quoteAmt });
+    const tx = await routerW.launch(...args, { value: quoteAmt });
     setStatus(`${t("l.s.sent")} <a href="${C.explorer}/tx/${tx.hash}" target="_blank" rel="noopener">view tx</a>`);
     saltJobs.delete(stratKey(strat)); // this address is taken now
     const rc = await tx.wait();
-    const iface = new E.Interface(PORTAL_ABI);
-    const ev2 = rc.logs.map((l) => { try { return iface.parseLog(l); } catch { return null; } }).find((x) => x?.name === "TokenCreated");
+    const iface = new E.Interface([...PORTAL_ABI, ...ROUTER_ABI]);
+    const ev2 = rc.logs.map((l) => { try { return iface.parseLog(l); } catch { return null; } }).find((x) => x?.name === "Launched" || x?.name === "TokenCreated");
     const token = ev2?.args?.token ?? address;
 
     const mine = store.get(KEY + "launches", []);
-    mine.unshift({ token, deployer: me, block: rc.blockNumber, name, symbol, meta: cid, description: desc, ...strat, at: Date.now(), tx: tx.hash });
+    mine.unshift({ token, deployer: me, block: rc.blockNumber, name, symbol, meta: cid, description: desc, ...strat, taxBps, at: Date.now(), tx: tx.hash });
     store.set(KEY + "launches", mine.slice(0, 50));
     if (quoteAmt > 0n) {
       const got = await new E.Contract(token, TOKEN_ABI, provider).balanceOf(me).catch(() => 0n);

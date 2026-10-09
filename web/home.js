@@ -1,5 +1,5 @@
 import {
-  $, bars, cachedTokens, esc, initShell, live, loadTokens, onMarkets, readChain, refreshCards, refreshTokenPrices, statBlock, t, tokenCard, totals, wireCards,
+  $, bars, cachedTokens, esc, initShell, live, loadIndex, loadTokens, onMarkets, readChain, refreshCards, refreshTokenPrices, statBlock, t, tokenCard, totals, wireCards,
 } from "./core.js";
 
 initShell();
@@ -127,3 +127,13 @@ renderViews();
 renderCards();
 refresh();
 setInterval(refresh, 15_000);
+// New launches: a light check of the launch list every 4 seconds; a full refresh only when it changed.
+let busy = false;
+setInterval(async () => {
+  if (busy || document.hidden) return;
+  busy = true;
+  try {
+    const list = await loadIndex();
+    if (list.some((x) => !byToken.has(x.token.toLowerCase()))) await refresh();
+  } catch {} finally { busy = false; }
+}, 4_000);

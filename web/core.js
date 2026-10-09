@@ -21,7 +21,8 @@ const DEFAULTS = {
   flapUpload: "https://funcs.flap.sh/api/upload",
   ipfs: "https://flap.mypinata.cloud/ipfs/",
   ipfsGateways: ["https://flap.mypinata.cloud/ipfs/", "https://ipfs.io/ipfs/", "https://dweb.link/ipfs/", "https://gateway.pinata.cloud/ipfs/", "https://w3s.link/ipfs/"],
-  strategies: {},
+  router: "",
+  routerBlock: 0,
   taxOptions: [1, 3, 5, 10],
   startBlock: 0,
   hlInfo: "https://api.hyperliquid.xyz/info",
@@ -37,7 +38,8 @@ export const $ = (id) => document.getElementById(id);
 export const ZERO = "0x0000000000000000000000000000000000000000";
 export const NATIVE = C.native;
 // Local data is namespaced per chain, so nothing from an earlier deployment shows up.
-export const KEY = `feev.${C.chainId}.`;
+// "r." = data since the Feeverage router; nothing from before it is shown.
+export const KEY = `feev.${C.chainId}.r.`;
 
 // ------------------------------------------------------------------ ABIs (flap.sh Portal)
 const NEW_TOKEN_V6 = "(string name,string symbol,string meta,uint8 dexThresh,bytes32 salt,uint8 migratorType,address quoteToken,uint256 quoteAmt,address beneficiary,bytes permitData,bytes32 extensionID,bytes extensionData,uint8 dexId,uint8 lpFeeProfile,uint16 buyTaxRate,uint16 sellTaxRate,uint64 taxDuration,uint64 antiFarmerDuration,uint16 mktBps,uint16 deflationBps,uint16 dividendBps,uint16 lpBps,uint256 minimumShareBalance,address dividendToken,address commissionReceiver,uint8 tokenVersion)";
@@ -49,6 +51,12 @@ export const PORTAL_ABI = [
   "event TokenCreated(uint256 ts,address creator,uint256 nonce,address token,string name,string symbol,string meta)",
   "event TokenBought(uint256 ts,address token,address buyer,uint256 amount,uint256 eth,uint256 fee,uint256 postPrice)",
   "event TokenSold(uint256 ts,address token,address seller,uint256 amount,uint256 eth,uint256 fee,uint256 postPrice)",
+];
+// Feeverage router (router/FeeverageRouter.sol): every launch from this site goes through it.
+export const ROUTER_ABI = [
+  `function launch(${NEW_TOKEN_V6} p,string market,bool isLong,uint8 leverage) payable returns (address token)`,
+  "event Launched(address indexed token,address indexed creator,string market,bool isLong,uint8 leverage,uint16 taxBps,string name,string symbol,string meta)",
+  "error WrongFeeWallet()", "error BadStrategy()", "error WrongValue()", "error TransferFailed()",
 ];
 export const HELPER_ABI = [
   "function getTaxTokenInfo(address taxToken) view returns ((uint16 marketBps,uint16 deflationBps,uint16 lpBps,uint16 dividendBps,uint16 taxRate,uint256 burntTokenAmount,uint256 totalQuoteSentToDividend,uint256 totalQuoteAddedToLiquidity,uint256 totalTokenAddedToLiquidity,uint256 totalQuoteSentToMarketing,address marketingWallet,address quoteToken,uint256 minimumShareBalance))",
@@ -352,8 +360,6 @@ export function saltPrefix({ market, isLong, leverage }) {
   b.set(new TextEncoder().encode(market.slice(0, 10)), 6);
   return b;
 }
-// Strategy for a token: description tag, then salt, then the manual list in config.js.
-export const knownStrategy = (token) => parseStrategy("feeverage:" + (C.strategies?.[String(token).toLowerCase()] || ""));
 
 // Runs fn over items with at most n in flight, so a long list doesn't flood the RPC.
 async function pool(items, n, fn) {
@@ -365,7 +371,7 @@ async function pool(items, n, fn) {
 
 // Direct chain access from the browser, used when the site's server can't answer.
 // Last resort is the site's own relay (api/rpc.js), for networks that block public endpoints.
-const LOG_RPCS = () => [...new Set([...(C.logRpcs || []), "https://bsc-rpc.publicnode.com", "https://bsc.drpc.org", "https://binance.llamarpc.com", "https://1rpc.io/bnb", "https://bsc.blockpi.network/v1/rpc/public", "api/rpc"])];
+const LOG_RPCS = () => [...new Set([...(C.logRpcs || []), "https://bsc-rpc.publicnode.com", "https://bsc.drpc.org", "api/rpc"])];
 let logRpc = 0;
 async function rawRpc(method, params) {
   const urls = LOG_RPCS();
@@ -382,76 +388,57 @@ async function rawRpc(method, params) {
   }
   throw err;
 }
-const PI = () => new E.Interface(PORTAL_ABI);
-const HI = () => new E.Interface(HELPER_ABI);
-const MI = () => new E.Interface(["function aggregate3((address target,bool allowFailure,bytes callData)[] calls) view returns ((bool success,bytes returnData)[])"]);
-async function launchLogs(a, b) {
-  try {
-    return await rawRpc("eth_getLogs", [{ address: C.portal, topics: [PI().getEvent("TokenCreated").topicHash], fromBlock: E.toQuantity(a), toBlock: E.toQuantity(b) }]);
-  } catch (e) {
-    if (b - a < 400) throw e;
-    const m = Math.floor((a + b) / 2);
-    return [...(await launchLogs(a, m)), ...(await launchLogs(m + 1, b))];
-  }
+
+// ------------------------------------------------------------------ the launch list
+// Every launch from this site goes through the Feeverage router, which records it in one
+// event: token, launcher, market, side, leverage, tax, name, symbol, metadata. The list is
+// those events, read in fixed segments of 100,000 blocks from the router's first block.
+// The site's server answers each segment (api/tokens.js) and the CDN keeps finished segments
+// forever, so every visitor gets the same list and only the newest segment is read again.
+// If the server can't answer, the browser reads that segment from BNB Chain itself.
+export const SEG = 100_000;
+const RI = () => new E.Interface(ROUTER_ABI);
+export function launchedToToken(l, iface = RI()) {
+  const ev = iface.parseLog(l);
+  if (!ev || ev.name !== "Launched") return null;
+  const a = ev.args;
+  return { token: E.getAddress(a.token), deployer: a.creator, market: a.market, isLong: a.isLong, leverage: Number(a.leverage), taxBps: Number(a.taxBps),
+    name: a.name, symbol: a.symbol, meta: a.meta, block: Number(l.blockNumber), tx: l.transactionHash };
 }
-async function oursOnly(cands) {
-  const fee = String(C.feeRecipient).toLowerCase(), H = HI(), M = MI(), out = [];
-  for (let i = 0; i < cands.length; i += 150) {
-    const chunk = cands.slice(i, i + 150);
-    const data = M.encodeFunctionData("aggregate3", [chunk.map((x) => ({ target: C.taxHelper, allowFailure: true, callData: H.encodeFunctionData("getTaxTokenInfo", [x.token]) }))]);
-    const [res] = M.decodeFunctionResult("aggregate3", await rawRpc("eth_call", [{ to: "0xcA11bde05977b3631167028862bE2a173976CA11", data }, "latest"]));
-    res.forEach((r, k) => {
-      try { if (r.success && H.decodeFunctionResult("getTaxTokenInfo", r.returnData)[0].marketingWallet.toLowerCase() === fee) out.push(chunk[k]); } catch {}
-    });
-  }
-  return out;
-}
-// ------------------------------------------------------------------ the launch index
-// Launches are read in fixed segments of 50,000 blocks from startBlock. The site's server
-// answers each segment (api/tokens.js) and the CDN keeps finished segments forever, so every
-// visitor gets the same list and only the newest segment is read from the chain. If the server
-// can't answer, the browser reads that segment from BNB Chain itself, in exactly the same way.
-export const SEG = 50_000;
-async function segFromServer(fee, start, n) {
+async function segFromServer(n) {
   if (typeof location === "undefined" || !/^https?:/.test(location.protocol)) throw new Error("no server");
-  const r = await fetch(`api/tokens?${new URLSearchParams({ fee, start: String(start), seg: String(n) })}`, { signal: AbortSignal.timeout(11000) });
+  const q = new URLSearchParams({ router: C.router, start: String(C.routerBlock), seg: String(n) });
+  const r = await fetch(`api/tokens?${q}`, { signal: AbortSignal.timeout(10000) });
   if (!r.ok) throw new Error("server " + r.status);
   const j = await r.json();
   if (!Array.isArray(j.tokens)) throw new Error("server data");
   return j;
 }
-async function segFromBrowser(fee, start, n, latest) {
-  const a = start + n * SEG, end = a + SEG - 1, b = Math.min(end, latest);
-  const P = PI(), cands = [];
-  for (let x = a; x <= b; x += 5000) {
-    for (const l of await launchLogs(x, Math.min(b, x + 4999))) {
-      try { const ev = P.parseLog(l); cands.push({ token: ev.args.token, deployer: ev.args.creator, name: ev.args.name, symbol: ev.args.symbol, meta: ev.args.meta, block: Number(l.blockNumber), tx: l.transactionHash }); } catch {}
-    }
-  }
-  const ours = cands.length ? await oursOnly(cands) : [];
-  const tokens = await Promise.all(ours.map(async (x) => {
-    const st = knownStrategy(x.token) ?? (await saltStrategy(x.tx));
-    return { ...x, description: null, logo: null, socials: {}, tag: st ? `feeverage:${st.market}:${st.isLong ? "L" : "S"}:${st.leverage}` : null };
-  }));
-  return { tokens, final: end <= latest - 150 && tokens.every((x) => x.tag) };
+async function segFromBrowser(n, latest) {
+  const a = Number(C.routerBlock) + n * SEG, end = a + SEG - 1, b = Math.min(end, latest);
+  const iface = RI(), topic = iface.getEvent("Launched").topicHash, parts = [];
+  for (let x = a; x <= b; x += 5_000) parts.push([x, Math.min(b, x + 4_999)]);
+  const logs = (await Promise.all(parts.map(([x, y]) => rawRpc("eth_getLogs", [{ address: C.router, topics: [topic], fromBlock: E.toQuantity(x), toBlock: E.toQuantity(y) }])))).flat();
+  const tokens = logs.map((l) => { try { return launchedToToken(l, iface); } catch { return null; } }).filter(Boolean);
+  return { tokens, final: end <= latest - 150 };
 }
 let indexing = null;
 export function loadIndex() {
   return (indexing ??= (async () => {
-    const start = Number(C.startBlock) || 0, fee = String(C.feeRecipient).toLowerCase();
-    if (!start || !isAddr(fee)) return [];
-    const k = KEY + "index." + fee + "." + start;
+    const start = Number(C.routerBlock) || 0;
+    if (!isAddr(C.router) || !start) return [];
+    const k = KEY + "index." + C.router.toLowerCase() + "." + start;
     const saved = store.get(k, {});
     let latest;
-    try { latest = Number(await rawRpc("eth_blockNumber", [])); } catch { latest = (await segFromServer(fee, start, 0)).latest; }
+    try { latest = Number(await rawRpc("eth_blockNumber", [])); } catch { latest = (await segFromServer(0)).latest; }
     const last = Math.max(0, Math.floor((latest - start) / SEG));
     const todo = [];
     for (let n = last; n >= 0; n--) if (!saved[n]) todo.push(n); // newest first
     // Last answer of each unfinished segment, used if both the server and the chain fail.
     const got = store.get(k + ".live", {});
-    await pool(todo, 4, async (n) => {
+    await pool(todo, 6, async (n) => {
       let r;
-      try { r = await segFromServer(fee, start, n); } catch { r = await segFromBrowser(fee, start, n, latest); }
+      try { r = await segFromServer(n); } catch { r = await segFromBrowser(n, latest); }
       got[n] = r.tokens;
       if (r.final) { saved[n] = r.tokens; delete got[n]; }
     });
@@ -463,28 +450,12 @@ export function loadIndex() {
   })().finally(() => setTimeout(() => (indexing = null), 0)));
 }
 
-// Strategy written into the launch transaction's salt (see saltPrefix).
-async function saltStrategy(txHash) {
-  try {
-    const t = await rawRpc("eth_getTransactionByHash", [txHash]);
-    const b = E.getBytes(PI().decodeFunctionData("newTokenV6", t.input)[0].salt);
-    if (new TextDecoder().decode(b.slice(0, 4)) !== "FEEV" || ![0x4c, 0x53].includes(b[4])) return null;
-    return parseStrategy(`feeverage:${new TextDecoder().decode(b.slice(6, 16)).replace(/\0+$/, "")}:${b[4] === 0x4c ? "L" : "S"}:${b[5]}`);
-  } catch {
-    return null;
-  }
-}
-
 async function fromChain() {
   const found = new Map();
-  for (const x of await loadIndex()) {
-    const st = parseStrategy(x.tag) ?? parseStrategy(x.description) ?? knownStrategy(x.token);
-    if (st) found.set(x.token.toLowerCase(), { feesEth: null, pendingEth: null, socials: {}, ...x, ...st });
-  }
-  // Launches made from this browser show up immediately, before the index has them.
+  for (const x of await loadIndex()) found.set(x.token.toLowerCase(), { feesEth: null, pendingEth: null, socials: {}, logo: null, description: null, ...x });
+  // Launches made from this browser show up immediately, before the list has them.
   for (const m of store.get(KEY + "launches", [])) {
-    const st = parseStrategy(m.description) ?? knownStrategy(m.token);
-    if (st && !found.has(m.token.toLowerCase())) found.set(m.token.toLowerCase(), { feesEth: null, pendingEth: null, socials: {}, logo: null, ...m, ...st });
+    if (!found.has(m.token.toLowerCase())) found.set(m.token.toLowerCase(), { feesEth: null, pendingEth: null, socials: {}, logo: null, ...m });
   }
   return [...found.values()].sort((a, b) => (b.block || 0) - (a.block || 0));
 }
@@ -844,7 +815,7 @@ function forgetOldChain() {
   try {
     for (const k of Object.keys(localStorage)) {
       if (k === "feeverage.launches" || k === "feev.notours" || k.startsWith("feev.trades.") || k.startsWith("feev.4663.")
-        || k === KEY + "tokens" || k.startsWith(KEY + "scan.")) localStorage.removeItem(k);
+        || (k.startsWith(`feev.${C.chainId}.`) && !k.startsWith(KEY))) localStorage.removeItem(k);
     }
   } catch {}
 }
