@@ -363,23 +363,7 @@ async function pool(items, n, fn) {
   }));
 }
 
-// The site's own server also looks for launches; it is only a second source, never waited on long.
-async function fromServer() {
-  if (typeof location === "undefined" || !/^https?:/.test(location.protocol) || !isAddr(C.feeRecipient)) return null;
-  try {
-    const q = new URLSearchParams({ fee: C.feeRecipient, from: String(Number(C.startBlock) || 0) });
-    const r = await fetch(`api/tokens?${q}`, { signal: AbortSignal.timeout(9000) });
-    if (!r.ok) return null;
-    const j = await r.json();
-    return Array.isArray(j.tokens) ? j.tokens : null;
-  } catch {
-    return null;
-  }
-}
-
-// The browser finds launches itself, straight from BNB Chain: every flap.sh launch since
-// startBlock, then one Multicall3 call per 150 tokens to keep those whose tax goes to the
-// operator. What was scanned is remembered, so later visits only read the new blocks.
+// Direct chain access from the browser, used when the site's server can't answer.
 const LOG_RPCS = () => [...new Set([...(C.logRpcs || []), "https://bsc-rpc.publicnode.com", "https://bsc.drpc.org", "https://1rpc.io/bnb", C.rpc])];
 let logRpc = 0;
 async function rawRpc(method, params) {
@@ -421,36 +405,61 @@ async function oursOnly(cands) {
   }
   return out;
 }
-let scanning = null;
-export function scanLaunches() {
-  return (scanning ??= (async () => {
-    const start = Number(C.startBlock) || 0;
-    if (!start || !isAddr(C.feeRecipient)) return [];
-    const k = KEY + "scan." + String(C.feeRecipient).toLowerCase();
-    let st = store.get(k, null);
-    if (!st || st.start !== start) st = { start, to: start - 1, found: [] };
-    const latest = Number(await rawRpc("eth_blockNumber", []));
-    const SPAN = 5000, ranges = [];
-    for (let a = st.to + 1; a <= latest; a += SPAN) ranges.push([a, Math.min(latest, a + SPAN - 1)]);
-    ranges.reverse(); // newest first
-    const P = PI();
-    let done = true;
-    await pool(ranges, 6, async ([a, b]) => {
-      let logs;
-      try { logs = await launchLogs(a, b); } catch { done = false; throw new Error("logs"); }
-      const cands = [];
-      for (const l of logs) {
-        try { const ev = P.parseLog(l); cands.push({ token: ev.args.token, deployer: ev.args.creator, name: ev.args.name, symbol: ev.args.symbol, meta: ev.args.meta, block: Number(l.blockNumber), tx: l.transactionHash }); } catch {}
-      }
-      if (cands.length) {
-        try { st.found.push(...(await oursOnly(cands))); } catch { done = false; throw new Error("filter"); }
-      }
+// ------------------------------------------------------------------ the launch index
+// Launches are read in fixed segments of 50,000 blocks from startBlock. The site's server
+// answers each segment (api/tokens.js) and the CDN keeps finished segments forever, so every
+// visitor gets the same list and only the newest segment is read from the chain. If the server
+// can't answer, the browser reads that segment from BNB Chain itself, in exactly the same way.
+export const SEG = 50_000;
+async function segFromServer(fee, start, n) {
+  if (typeof location === "undefined" || !/^https?:/.test(location.protocol)) throw new Error("no server");
+  const r = await fetch(`api/tokens?${new URLSearchParams({ fee, start: String(start), seg: String(n) })}`, { signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error("server " + r.status);
+  const j = await r.json();
+  if (!Array.isArray(j.tokens)) throw new Error("server data");
+  return j;
+}
+async function segFromBrowser(fee, start, n, latest) {
+  const a = start + n * SEG, end = a + SEG - 1, b = Math.min(end, latest);
+  const P = PI(), cands = [];
+  for (let x = a; x <= b; x += 5000) {
+    for (const l of await launchLogs(x, Math.min(b, x + 4999))) {
+      try { const ev = P.parseLog(l); cands.push({ token: ev.args.token, deployer: ev.args.creator, name: ev.args.name, symbol: ev.args.symbol, meta: ev.args.meta, block: Number(l.blockNumber), tx: l.transactionHash }); } catch {}
+    }
+  }
+  const ours = cands.length ? await oursOnly(cands) : [];
+  const tokens = await Promise.all(ours.map(async (x) => {
+    const st = knownStrategy(x.token) ?? (await saltStrategy(x.tx));
+    return { ...x, description: null, logo: null, socials: {}, tag: st ? `feeverage:${st.market}:${st.isLong ? "L" : "S"}:${st.leverage}` : null };
+  }));
+  return { tokens, final: end <= latest - 150 && tokens.every((x) => x.tag) };
+}
+let indexing = null;
+export function loadIndex() {
+  return (indexing ??= (async () => {
+    const start = Number(C.startBlock) || 0, fee = String(C.feeRecipient).toLowerCase();
+    if (!start || !isAddr(fee)) return [];
+    const k = KEY + "index." + fee + "." + start;
+    const saved = store.get(k, {});
+    let latest;
+    try { latest = Number(await rawRpc("eth_blockNumber", [])); } catch { latest = (await segFromServer(fee, start, 0)).latest; }
+    const last = Math.max(0, Math.floor((latest - start) / SEG));
+    const todo = [];
+    for (let n = last; n >= 0; n--) if (!saved[n]) todo.push(n); // newest first
+    // Last answer of each unfinished segment, used if both the server and the chain fail.
+    const got = store.get(k + ".live", {});
+    await pool(todo, 4, async (n) => {
+      let r;
+      try { r = await segFromServer(fee, start, n); } catch { r = await segFromBrowser(fee, start, n, latest); }
+      got[n] = r.tokens;
+      if (r.final) { saved[n] = r.tokens; delete got[n]; }
     });
-    const seen = new Set();
-    st.found = st.found.filter((x) => !seen.has(x.token.toLowerCase()) && seen.add(x.token.toLowerCase()));
-    if (done) { st.to = latest; store.set(k, st); }
-    return st.found;
-  })().finally(() => setTimeout(() => (scanning = null), 0)));
+    store.set(k, saved);
+    store.set(k + ".live", got);
+    const all = [];
+    for (let n = 0; n <= last; n++) all.push(...(saved[n] ?? got[n] ?? []));
+    return all;
+  })().finally(() => setTimeout(() => (indexing = null), 0)));
 }
 
 // Strategy written into the launch transaction's salt (see saltPrefix).
@@ -465,38 +474,18 @@ async function saltStrategy(txHash) {
   }
 }
 
-// Checks one token: fees must go to our operator and its description must carry the strategy tag.
-async function inspect(x) {
-  const info = await helper.getTaxTokenInfo(x.token);
-  if (!C.feeRecipient || info.marketingWallet.toLowerCase() !== C.feeRecipient.toLowerCase()) return null;
-  const tk = new E.Contract(x.token, TOKEN_ABI, provider);
-  const [name, symbol, cid] = await Promise.all([x.name ?? tk.name(), x.symbol ?? tk.symbol(), x.meta ?? tk.metaURI()]);
-  // Known list and salt are instant; IPFS is only waited on when neither has the strategy.
-  const quick = knownStrategy(x.token) ?? (x.tx ? await saltStrategy(x.tx) : null);
-  const meta = quick ? null : await fetchMeta(cid);
-  const st = quick ?? parseStrategy(meta?.description ?? x.description ?? "");
-  if (!st) return null;
-  return { token: x.token, deployer: x.deployer ?? meta?.creator ?? null, name, symbol, meta: cid, description: meta?.description ?? x.description ?? null,
-    logo: meta?.logo ?? x.logo ?? null, socials: meta?.socials ?? {}, ...st, block: x.block ?? 0, feesEth: null, pendingEth: null };
-}
-
 async function fromChain() {
   const found = new Map();
-  // The browser's own scan decides; the server only gets a moment more once the scan is done.
-  const scan = scanLaunches().catch(() => []);
-  const [mine, srv] = await Promise.all([scan, Promise.race([fromServer(), scan.then(() => new Promise((r) => setTimeout(() => r(null), 1200)))])]);
-  for (const x of srv ?? []) found.set(x.token.toLowerCase(), x);
-  for (const x of mine) if (!found.has(x.token.toLowerCase())) found.set(x.token.toLowerCase(), x);
-  // Launches made from this browser show up immediately, before any indexer has seen them.
-  for (const m of store.get(KEY + "launches", [])) if (!found.has(m.token.toLowerCase())) found.set(m.token.toLowerCase(), m);
-  const out = [];
-  await pool([...found.values()], 6, async (x) => {
-    const st = parseStrategy(x.description) ?? knownStrategy(x.token);
-    const t2 = st ? { ...x, ...st } : await inspect(x);
-    if (t2 && t2.market) out.push({ feesEth: null, pendingEth: null, socials: {}, ...t2 });
-  });
-  out.sort((a, b) => (b.block || 0) - (a.block || 0));
-  return out;
+  for (const x of await loadIndex()) {
+    const st = parseStrategy(x.tag) ?? parseStrategy(x.description) ?? knownStrategy(x.token);
+    if (st) found.set(x.token.toLowerCase(), { feesEth: null, pendingEth: null, socials: {}, ...x, ...st });
+  }
+  // Launches made from this browser show up immediately, before the index has them.
+  for (const m of store.get(KEY + "launches", [])) {
+    const st = parseStrategy(m.description) ?? knownStrategy(m.token);
+    if (st && !found.has(m.token.toLowerCase())) found.set(m.token.toLowerCase(), { feesEth: null, pendingEth: null, socials: {}, logo: null, ...m, ...st });
+  }
+  return [...found.values()].sort((a, b) => (b.block || 0) - (a.block || 0));
 }
 
 // ------------------------------------------------------------------ token state (on-chain, live)
@@ -575,16 +564,16 @@ export async function loadTokens() {
       source = t("src.chain");
     } else throw new Error("no source");
   } catch {
-    tokens = [];
+    tokens = cachedTokens(); // keep showing the last list rather than an empty one
     source = isAddr(C.feeRecipient) || C.keeperApi ? t("src.connecting") : t("src.none");
   }
   await Promise.all([enrichChain(tokens), enrichPositions(tokens)]);
-  if (tokens.length) store.set(KEY + "tokens", tokens.slice(0, 200));
+  if (tokens.length) store.set(KEY + "list", tokens.slice(0, 200));
   return { tokens, source };
 }
 
 // Last list seen by this browser: drawn instantly while fresh data loads.
-export const cachedTokens = () => store.get(KEY + "tokens", []);
+export const cachedTokens = () => store.get(KEY + "list", []);
 
 export function totals(tokens) {
   const L = tokens.map(live);
@@ -719,7 +708,7 @@ export function bars(el, lev, max = 20) {
 }
 
 // A number that spins like a counter, then settles on its real value.
-export function roll(el, to, fmtFn, dur = 1200) {
+export function roll(el, to, fmtFn, dur = 1200, from = null) {
   el.dataset.v = to;
   el._fmt = fmtFn;
   const t0 = performance.now();
@@ -728,7 +717,9 @@ export function roll(el, to, fmtFn, dur = 1200) {
   const tick = (now) => {
     if (el._rollId !== id) return;
     const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 4);
-    el.textContent = fmtFn(p < 1 ? to + (1 - e) * spread * Math.random() : to);
+    // First appearance spins like a counter; later updates glide from the old value to the new one.
+    const v = from == null ? to + (1 - e) * spread * Math.random() : from + (to - from) * e;
+    el.textContent = fmtFn(p < 1 ? (el.dataset.stat === "tokens" ? Math.round(v) : v) : to);
     if (p < 1) requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
@@ -752,7 +743,7 @@ export function statBlock(root) {
       const val = Number(tot[el.dataset.stat] ?? 0) || 0;
       if (Math.abs(Number(el.dataset.v) - val) > 1e-9) {
         if (quiet) { el.dataset.v = val; el.textContent = el._fmt(val); }
-        else roll(el, val, el._fmt, 900);
+        else roll(el, val, el._fmt, 900, Number(el.dataset.v));
       }
       if (el.dataset.stat === "pnlUsd") { el.classList.toggle("pos", val > 0); el.classList.toggle("neg", val < 0); }
     });
@@ -851,7 +842,8 @@ function wireWallet() {
 function forgetOldChain() {
   try {
     for (const k of Object.keys(localStorage)) {
-      if (k === "feeverage.launches" || k === "feev.notours" || k.startsWith("feev.trades.") || k.startsWith("feev.4663.")) localStorage.removeItem(k);
+      if (k === "feeverage.launches" || k === "feev.notours" || k.startsWith("feev.trades.") || k.startsWith("feev.4663.")
+        || k === KEY + "tokens" || k.startsWith(KEY + "scan.")) localStorage.removeItem(k);
     }
   } catch {}
 }

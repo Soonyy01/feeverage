@@ -1,6 +1,6 @@
 import {
-  $, C, E, NATIVE, cachedTokens, PORTAL_ABI, TOKEN_ABI, ZERO, chain, recordTrade, compactUsd, errMsg, esc, ethPx, fmt, holdingLive, initShell, isAddr, live, loadHoldings, loadTokens,
-  onMarkets, pnlText, provider, px, readChain, refreshTokenPrices, short, stripTag, t, tokenLogo, usd, wallet,
+  $, C, E, KEY, NATIVE, cachedTokens, PORTAL_ABI, TOKEN_ABI, ZERO, chain, recordTrade, compactUsd, errMsg, esc, ethPx, fmt, holdingLive, initShell, isAddr, live, loadHoldings, loadTokens,
+  onMarkets, pnlText, provider, px, readChain, refreshTokenPrices, short, store, stripTag, t, tokenLogo, usd, wallet,
 } from "./core.js";
 
 initShell();
@@ -174,15 +174,19 @@ async function load() {
   if (!isAddr(addr)) {
     $("missing").hidden = false;
     $("page").hidden = true;
+    $("loadingTok").hidden = true;
     return;
   }
+  const same = (x) => x.token?.toLowerCase() === addr.toLowerCase();
   if (!raw) {
-    raw = cachedTokens().find((x) => x.token?.toLowerCase() === addr.toLowerCase()) ?? null;
-    if (raw) { $("missing").hidden = true; $("page").hidden = false; render(); }
+    // Shown at once from this browser's last list, or from its own launch.
+    raw = cachedTokens().find(same) ?? store.get(KEY + "launches", []).find(same) ?? null;
+    if (raw) { raw = { feesEth: null, pendingEth: null, socials: {}, ...raw }; $("loadingTok").hidden = true; $("missing").hidden = true; $("page").hidden = false; render(); }
   }
   await readChain();
   const { tokens } = await loadTokens();
-  raw = tokens.find((x) => x.token?.toLowerCase() === addr.toLowerCase()) ?? null;
+  raw = tokens.find(same) ?? raw;
+  $("loadingTok").hidden = true;
   $("missing").hidden = Boolean(raw);
   $("page").hidden = !raw;
   render();
@@ -195,4 +199,4 @@ setInterval(async () => { if (raw) { await refreshTokenPrices([raw]); tickLive(f
 onMarkets(() => tickLive(false));
 addEventListener("langchange", render);
 load();
-setInterval(load, 30_000);
+setInterval(load, 15_000);

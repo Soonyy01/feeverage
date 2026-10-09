@@ -126,4 +126,4 @@ if (cachedTokens().length) show(cachedTokens());
 renderViews();
 renderCards();
 refresh();
-setInterval(refresh, 30_000);
+setInterval(refresh, 15_000);

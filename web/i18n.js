@@ -96,7 +96,7 @@ const D = {
     "l.s.logo": "Saving your logo on-chain: confirm in your wallet (1 of 2)…", "l.s.conn": "Connecting wallet…", "l.s.sim": "Simulating…", "l.s.confirm": "Confirm the launch in your wallet…",
     "l.s.sent": "Sent. Waiting for the block…", "l.s.live": "is live.", "l.s.open": "Open the token page →",
 
-    "t.back": "← All tokens", "t.missing": "Token not found", "t.missing.p": "It may still be loading, or it was not launched through Feeverage.",
+    "t.back": "← All tokens", "t.loading": "Loading token…", "t.missing": "Token not found", "t.missing.p": "It may still be loading, or it was not launched through Feeverage.",
     "t.position": "Position", "t.funded": "Funded", "t.margin": "Margin", "t.notional": "Notional", "t.size": "Size",
     "t.pnl": "Live PnL", "t.entry": "Entry price", "t.mark": "Live price", "t.liq": "Liq. price",
     "t.fees": "Fees routed", "t.waiting": "Fees waiting", "t.curve": "Bonding curve", "t.mcap": "Market cap",
@@ -205,7 +205,7 @@ const D = {
     "l.s.logo": "正在把 logo 保存到链上：请在钱包中确认（第 1 步，共 2 步）…", "l.s.conn": "正在连接钱包…", "l.s.sim": "正在模拟交易…", "l.s.confirm": "请在钱包中确认发射…",
     "l.s.sent": "已发送，等待出块…", "l.s.live": "已上线。", "l.s.open": "打开代币页面 →",
 
-    "t.back": "← 全部代币", "t.missing": "未找到代币", "t.missing.p": "可能仍在加载，或者该代币不是通过 Feeverage 发射的。",
+    "t.back": "← 全部代币", "t.loading": "正在加载代币…", "t.missing": "未找到代币", "t.missing.p": "可能仍在加载，或者该代币不是通过 Feeverage 发射的。",
     "t.position": "仓位", "t.funded": "已注资", "t.margin": "保证金", "t.notional": "名义价值", "t.size": "规模",
     "t.pnl": "实时盈亏", "t.entry": "开仓价", "t.mark": "实时价格", "t.liq": "清算价",
     "t.fees": "已导入手续费", "t.waiting": "待处理手续费", "t.curve": "联合曲线", "t.mcap": "市值",
