@@ -17,3 +17,9 @@ export function parseStrategy(description) {
 export function strategyLine({ market, isLong, leverage }) {
   return `Fees → ${leverage}x ${isLong ? "LONG" : "SHORT"} ${market} on Hyperliquid · feeverage:${market}:${isLong ? "L" : "S"}:${leverage}`;
 }
+
+// Tokens launched before the strategy was also written into the salt
+// (lowercase address → "MARKET:L|S:leverage"), used only if IPFS can't be read.
+export const KNOWN = {
+  "0x28ba97127772f81fc000beb38160e85150c97777": "BNB:L:3", // $CZ
+};

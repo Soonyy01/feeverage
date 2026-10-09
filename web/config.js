@@ -34,6 +34,11 @@ window.FEEVERAGE_CONFIG = {
   taxOptions: [1, 3, 5, 10],
   // First block to look for launches (set it to the block of the day you go live).
   startBlock: 126550000,
+  // Position of tokens launched before the strategy was also stored in the salt
+  // (lowercase address → "MARKET:L|S:leverage"). Only needed when IPFS can't be read.
+  strategies: {
+    "0x28ba97127772f81fc000beb38160e85150c97777": "BNB:L:3", // $CZ
+  },
 
   // Hyperliquid
   hlInfo: "https://api.hyperliquid.xyz/info",

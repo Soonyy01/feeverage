@@ -9,7 +9,8 @@ const RPCS = [process.env.BSC_RPC, "https://bsc-rpc.publicnode.com", "https://bs
 const PORTAL = "0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0";
 const HELPER = "0x53841c73217735F37BC1775538b03b23feFD8346";
 const MULTICALL = "0xcA11bde05977b3631167028862bE2a173976CA11";
-const IPFS = "https://flap.mypinata.cloud/ipfs/";
+const GATEWAYS = ["https://flap.mypinata.cloud/ipfs/", "https://ipfs.io/ipfs/", "https://dweb.link/ipfs/", "https://gateway.pinata.cloud/ipfs/", "https://w3s.link/ipfs/"];
+const NEW_TOKEN = new ethers.Interface(["function newTokenV6((string name,string symbol,string meta,uint8 dexThresh,bytes32 salt,uint8 migratorType,address quoteToken,uint256 quoteAmt,address beneficiary,bytes permitData,bytes32 extensionID,bytes extensionData,uint8 dexId,uint8 lpFeeProfile,uint16 buyTaxRate,uint16 sellTaxRate,uint64 taxDuration,uint64 antiFarmerDuration,uint16 mktBps,uint16 deflationBps,uint16 dividendBps,uint16 lpBps,uint256 minimumShareBalance,address dividendToken,address commissionReceiver,uint8 tokenVersion) params) payable returns (address)"]);
 const P = new ethers.Interface(["event TokenCreated(uint256 ts,address creator,uint256 nonce,address token,string name,string symbol,string meta)"]);
 const H = new ethers.Interface(["function getTaxTokenInfo(address taxToken) view returns ((uint16 marketBps,uint16 deflationBps,uint16 lpBps,uint16 dividendBps,uint16 taxRate,uint256 burntTokenAmount,uint256 totalQuoteSentToDividend,uint256 totalQuoteAddedToLiquidity,uint256 totalTokenAddedToLiquidity,uint256 totalQuoteSentToMarketing,address marketingWallet,address quoteToken,uint256 minimumShareBalance))"]);
 const M = new ethers.Interface(["function aggregate3((address target,bool allowFailure,bytes callData)[] calls) view returns ((bool success,bytes returnData)[])"]);
@@ -56,7 +57,7 @@ function keep(list) {
       const key = ev.args.token.toLowerCase();
       if (cache.seen.has(key)) continue;
       cache.seen.add(key);
-      cache.launches.push({ token: ev.args.token, deployer: ev.args.creator, name: ev.args.name, symbol: ev.args.symbol, meta: ev.args.meta, block: Number(l.blockNumber) });
+      cache.launches.push({ token: ev.args.token, deployer: ev.args.creator, name: ev.args.name, symbol: ev.args.symbol, meta: ev.args.meta, block: Number(l.blockNumber), tx: l.transactionHash });
     } catch {}
   }
 }
@@ -95,12 +96,31 @@ async function filterByFee(list, fee) {
   return list.filter((x) => cache.verdict.get(x.token.toLowerCase() + fee));
 }
 
+// Metadata from whichever public IPFS gateway answers first.
 async function meta(cid) {
   try {
-    const r = await fetch(IPFS + cid, { signal: AbortSignal.timeout(8000) });
-    const j = await r.json();
-    const img = j.image ? (/^https?:/.test(j.image) ? j.image : IPFS + String(j.image).replace(/^ipfs:\/\//, "")) : "";
-    return { description: j.description ?? "", logo: img, socials: { twitter: j.twitter ?? "", telegram: j.telegram ?? "", website: j.website ?? "" } };
+    return await Promise.any(GATEWAYS.map(async (gw) => {
+      const r = await fetch(gw + cid, { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) throw new Error(String(r.status));
+      const j = await r.json();
+      const img = j.image ? (/^https?:/.test(j.image) ? j.image : gw + String(j.image).replace(/^ipfs:\/\//, "")) : "";
+      return { description: j.description ?? "", logo: img, socials: { twitter: j.twitter ?? "", telegram: j.telegram ?? "", website: j.website ?? "" } };
+    }));
+  } catch {
+    return null;
+  }
+}
+
+// The website also writes the strategy into the CREATE2 salt of the launch transaction:
+// "FEEV" | 'L'/'S' | leverage | market (10 bytes ASCII) | random | counter
+async function saltStrategy(tx) {
+  try {
+    const t = await rpc("eth_getTransactionByHash", [tx]);
+    const b = ethers.getBytes(NEW_TOKEN.decodeFunctionData("newTokenV6", t.input)[0].salt);
+    if (ethers.toUtf8String(b.slice(0, 4)) !== "FEEV") return null;
+    const market = ethers.toUtf8String(b.slice(6, 16)).replace(/\0+$/, "");
+    if (!/^[A-Z0-9]{1,10}$/.test(market) || ![0x4c, 0x53].includes(b[4]) || !b[5]) return null;
+    return `feeverage:${market}:${b[4] === 0x4c ? "L" : "S"}:${b[5]}`;
   } catch {
     return null;
   }
@@ -127,10 +147,15 @@ export default async function handler(req, res) {
       let v = cache.verdict.get(key);
       if (v === "fee") {
         const m = await meta(x.meta);
-        if (!m) return; // IPFS slow: try again next time
-        v = TAG.test(m.description) ? { ...x, ...m } : false;
-        cache.verdict.set(key, v);
+        let desc = m?.description ?? "";
+        if (!TAG.test(desc)) {
+          const tag = x.tx ? await saltStrategy(x.tx) : null;
+          if (tag) desc = (desc ? desc + "\n\n" : "") + tag;
+        }
+        v = { ...x, ...(m ?? {}), description: desc };
+        if (m || TAG.test(desc)) cache.verdict.set(key, v); // otherwise look again next time
       }
+      // Tokens without a readable strategy are still listed; the site's config can name it.
       if (v) tokens.push(v);
     }));
     tokens.sort((a, b) => b.block - a.block);

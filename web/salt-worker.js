@@ -7,7 +7,9 @@ onmessage = ({ data }) => {
   const buf = new Uint8Array(85);
   buf[0] = 0xff;
   buf.set(E.getBytes(data.portal), 1);
+  // first 16 bytes: the strategy (see saltPrefix in core.js), then 12 random bytes, then a counter
   const salt = crypto.getRandomValues(new Uint8Array(32));
+  if (data.prefix) salt.set(E.getBytes(data.prefix), 0);
   buf.set(E.getBytes(data.initHash), 53);
   for (let i = 0; ; i++) {
     // bump the last 4 bytes of the salt as a counter

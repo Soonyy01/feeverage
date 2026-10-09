@@ -1,6 +1,6 @@
 import {
   $, C, E, KEY, NATIVE, PORTAL_ABI, TOKEN_ABI, TOKEN_TAXED_V3, ZERO, bars, chain, errMsg, esc, fmt, initShell, isAddr, market,
-  onMarkets, provider, px, readChain, recordTrade, store, strategyLine, t, tokenUrl, wallet,
+  onMarkets, provider, px, readChain, recordTrade, saltPrefix, store, strategyLine, t, tokenUrl, wallet,
 } from "./core.js";
 
 initShell();
@@ -110,31 +110,42 @@ async function uploadMeta({ file, description, twitter, telegram, website, creat
 // proxy deployed by the Portal with CREATE2, so the address follows from the salt.
 // The search runs in a Web Worker (salt-worker.js), off the main thread.
 const INIT_HASH = () => E.keccak256("0x3d602d80600a3d3981f3363d3d373d3d3d363d73" + C.taxTokenImpl.slice(2).toLowerCase() + "5af43d82803e903d91602b57fd5bf3");
-function findSalt() {
+function findSalt(strat) {
   const initHash = INIT_HASH();
-  return new Promise((resolve, reject) => {
+  const prefix = E.hexlify(saltPrefix(strat));
+  return new Promise((resolve) => {
     let w;
-    try { w = new Worker("salt-worker.js"); } catch { return resolve(findSaltInline(initHash)); }
+    try { w = new Worker("salt-worker.js"); } catch { return resolve(findSaltInline(initHash, prefix)); }
     w.onmessage = ({ data }) => { w.terminate(); resolve(data); };
-    w.onerror = () => { w.terminate(); resolve(findSaltInline(initHash)); };
-    w.postMessage({ portal: C.portal, initHash });
+    w.onerror = () => { w.terminate(); resolve(findSaltInline(initHash, prefix)); };
+    w.postMessage({ portal: C.portal, initHash, prefix });
   });
 }
-async function findSaltInline(initHash) {
-  let salt = E.hexlify(E.randomBytes(32));
-  for (let i = 1; ; i++) {
+async function findSaltInline(initHash, prefix) {
+  const b = new Uint8Array(32);
+  b.set(E.getBytes(prefix), 0);
+  b.set(E.randomBytes(12), 16);
+  for (let i = 0; ; i++) {
+    b[28] = i >>> 24; b[29] = (i >>> 16) & 255; b[30] = (i >>> 8) & 255; b[31] = i & 255;
+    const salt = E.hexlify(b);
     const addr = E.getCreate2Address(C.portal, salt, initHash);
     if (addr.toLowerCase().endsWith("7777")) return { salt, address: addr };
-    salt = E.keccak256(salt);
     if (i % 1500 === 0) await new Promise((r) => setTimeout(r, 0));
   }
 }
 
-// The address search doesn't depend on the form, so it runs in the background as soon as
-// the page is open; by the time someone presses Launch it is usually already done.
-let saltJob = null;
-const nextSalt = () => (saltJob ??= findSalt());
-setTimeout(nextSalt, 600);
+// The address search doesn't depend on the name, so it runs in the background for the
+// chosen position; by the time someone presses Launch it is usually already done.
+const saltJobs = new Map();
+const stratKey = (s) => `${s.market}:${s.isLong ? "L" : "S"}:${s.leverage}`;
+const curStrat = () => ({ market: form.market, isLong: form.isLong, leverage: form.lev });
+const nextSalt = (s = curStrat()) => {
+  const k = stratKey(s);
+  if (!saltJobs.has(k)) { if (saltJobs.size > 8) saltJobs.clear(); saltJobs.set(k, findSalt(s)); }
+  return saltJobs.get(k);
+};
+let saltTimer = 0;
+const warmSalt = () => { clearTimeout(saltTimer); saltTimer = setTimeout(() => nextSalt(), 500); };
 
 // ------------------------------------------------------------------ summary
 function update() {
@@ -142,6 +153,7 @@ function update() {
   $("lev").max = String(maxL);
   if (Number($("lev").value) > maxL) $("lev").value = String(maxL);
   form.lev = Number($("lev").value);
+  warmSalt();
   const sym = ($("symbol").value || "FEEV").toUpperCase();
   const side = form.isLong ? "long" : "short";
   $("levOut").textContent = form.lev + "×";
@@ -203,7 +215,7 @@ $("launchForm").addEventListener("submit", async (ev) => {
     const file = logoBlob ?? (await defaultLogo(symbol));
     const [cid, { salt, address }] = await Promise.all([
       uploadMeta({ file, description: desc, twitter: $("x").value.trim(), telegram: $("tg").value.trim(), website: $("web").value.trim(), creator: me }),
-      nextSalt(),
+      nextSalt(strat),
     ]);
 
     const taxBps = Number($("tax").value) * 100;
@@ -230,8 +242,7 @@ $("launchForm").addEventListener("submit", async (ev) => {
     setStatus(t("l.s.confirm"));
     const tx = await portalW.newTokenV6(params, { value: quoteAmt });
     setStatus(`${t("l.s.sent")} <a href="${C.explorer}/tx/${tx.hash}" target="_blank" rel="noopener">view tx</a>`);
-    saltJob = null; // this address is taken now
-    setTimeout(nextSalt, 2000);
+    saltJobs.delete(stratKey(strat)); // this address is taken now
     const rc = await tx.wait();
     const iface = new E.Interface(PORTAL_ABI);
     const ev2 = rc.logs.map((l) => { try { return iface.parseLog(l); } catch { return null; } }).find((x) => x?.name === "TokenCreated");

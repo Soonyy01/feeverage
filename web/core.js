@@ -20,6 +20,8 @@ const DEFAULTS = {
   taxHelper: "0x53841c73217735F37BC1775538b03b23feFD8346",
   flapUpload: "https://funcs.flap.sh/api/upload",
   ipfs: "https://flap.mypinata.cloud/ipfs/",
+  ipfsGateways: ["https://flap.mypinata.cloud/ipfs/", "https://ipfs.io/ipfs/", "https://dweb.link/ipfs/", "https://gateway.pinata.cloud/ipfs/", "https://w3s.link/ipfs/"],
+  strategies: {},
   taxOptions: [1, 3, 5, 10],
   startBlock: 0,
   hlInfo: "https://api.hyperliquid.xyz/info",
@@ -314,28 +316,44 @@ async function fromKeeper() {
 }
 
 // Token metadata lives on IPFS (flap.sh pins it): description, image, socials.
+// Several public gateways are tried at once; the first that answers wins.
 const metaCache = new Map();
+const GATEWAYS = () => [...new Set([C.ipfs, ...(C.ipfsGateways || [])].filter(Boolean))];
 export async function fetchMeta(cid) {
   if (!cid) return null;
   if (metaCache.has(cid)) return metaCache.get(cid);
   const p = (async () => {
     try {
-      const r = await fetch(C.ipfs + cid, { signal: AbortSignal.timeout(12000) });
-      if (!r.ok) return null;
-      const j = await r.json();
+      const { j, gw } = await Promise.any(GATEWAYS().map(async (gw) => {
+        const r = await fetch(gw + cid, { signal: AbortSignal.timeout(12000) });
+        if (!r.ok) throw new Error(String(r.status));
+        return { j: await r.json(), gw };
+      }));
       return {
         description: j.description ?? "",
-        logo: j.image ? (/^https?:/.test(j.image) ? j.image : C.ipfs + String(j.image).replace(/^ipfs:\/\//, "")) : "",
+        logo: j.image ? (/^https?:/.test(j.image) ? j.image : gw + String(j.image).replace(/^ipfs:\/\//, "")) : "",
         socials: { twitter: j.twitter ?? "", telegram: j.telegram ?? "", website: j.website ?? "" },
         creator: j.creator ?? null,
       };
     } catch {
+      metaCache.delete(cid); // try again later
       return null;
     }
   })();
   metaCache.set(cid, p);
   return p;
 }
+
+// The strategy is also written into the CREATE2 salt, so it can be read even when IPFS is down:
+// salt = "FEEV" | side | leverage | market (10 bytes ASCII) | random (12) | counter (4)
+export function saltPrefix({ market, isLong, leverage }) {
+  const b = new Uint8Array(16);
+  b.set([0x46, 0x45, 0x45, 0x56, isLong ? 0x4c : 0x53, leverage]);
+  b.set(new TextEncoder().encode(market.slice(0, 10)), 6);
+  return b;
+}
+// Strategy for a token: description tag, then salt, then the manual list in config.js.
+export const knownStrategy = (token) => parseStrategy("feeverage:" + (C.strategies?.[String(token).toLowerCase()] || ""));
 
 // Runs fn over items with at most n in flight, so a long list doesn't flood the RPC.
 async function pool(items, n, fn) {
@@ -366,7 +384,7 @@ async function inspect(x) {
   const tk = new E.Contract(x.token, TOKEN_ABI, provider);
   const [name, symbol, cid] = await Promise.all([x.name ?? tk.name(), x.symbol ?? tk.symbol(), x.meta ?? tk.metaURI()]);
   const meta = await fetchMeta(cid);
-  const st = parseStrategy(meta?.description ?? x.description ?? "");
+  const st = parseStrategy(meta?.description ?? x.description ?? "") ?? knownStrategy(x.token);
   if (!st) return null;
   return { token: x.token, deployer: x.deployer ?? meta?.creator ?? null, name, symbol, meta: cid, description: meta?.description ?? x.description ?? "",
     logo: meta?.logo ?? x.logo ?? "", socials: meta?.socials ?? {}, ...st, block: x.block ?? 0, feesEth: null, pendingEth: null };
@@ -379,7 +397,7 @@ async function fromChain() {
   for (const m of store.get(KEY + "launches", [])) if (!found.has(m.token.toLowerCase())) found.set(m.token.toLowerCase(), m);
   const out = [];
   await pool([...found.values()], 6, async (x) => {
-    const st = parseStrategy(x.description);
+    const st = parseStrategy(x.description) ?? knownStrategy(x.token);
     const t2 = st ? { ...x, ...st } : await inspect(x);
     if (t2 && t2.market) out.push({ feesEth: null, pendingEth: null, socials: {}, ...t2 });
   });

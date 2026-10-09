@@ -11,14 +11,14 @@
 //
 // One seed phrase runs everything: account #0 is the operator (receives the tax and pays
 // gas), accounts #1, #2, … are the Hyperliquid accounts of token #0, #1, …
-import { createPublicClient, createWalletClient, formatEther, http, parseAbi, parseAbiItem } from "viem";
+import { createPublicClient, createWalletClient, decodeFunctionData, formatEther, hexToBytes, http, parseAbi, parseAbiItem } from "viem";
 import { bsc } from "viem/chains";
 import { mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
 import { createServer } from "node:http";
 import { loadState, saveState, tokenState, pendingWei } from "./state.js";
 import { quoteDeposit, executeDeposit, relayRouteSupported } from "./bridge.js";
 import { hlAccountFor, loadMarkets, nativeUsd, topUpPosition, accountSummary } from "./hl.js";
-import { parseStrategy } from "./strategy.js";
+import { KNOWN, parseStrategy } from "./strategy.js";
 
 const env = (k, d) => {
   const v = process.env[k] || d;
@@ -31,6 +31,9 @@ const cfg = {
   portal: env("FLAP_PORTAL", "0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0"),
   helper: env("FLAP_TAX_HELPER", "0x53841c73217735F37BC1775538b03b23feFD8346"),
   ipfs: env("IPFS_GATEWAY", "https://flap.mypinata.cloud/ipfs/"),
+  // "0xtoken:BNB:L:3,0xtoken2:BTC:S:5" for tokens whose strategy can't be read anywhere else
+  strategies: Object.fromEntries((process.env.STRATEGIES || "").split(",").map((x) => x.trim()).filter(Boolean)
+    .map((x) => [x.slice(0, 42).toLowerCase(), x.slice(43)])),
   startBlock: BigInt(env("START_BLOCK", "0")),
   mnemonic: env("SEED_PHRASE", process.env.HL_MNEMONIC),
   operatorKey: process.env.OPERATOR_PRIVATE_KEY || "",
@@ -93,18 +96,66 @@ async function scan(fromKey, fn) {
   }
 }
 
+// Metadata from whichever IPFS gateway answers first.
+const GATEWAYS = [...new Set([cfg.ipfs, "https://flap.mypinata.cloud/ipfs/", "https://ipfs.io/ipfs/", "https://dweb.link/ipfs/", "https://gateway.pinata.cloud/ipfs/", "https://w3s.link/ipfs/"])];
 async function fetchMeta(cid) {
   try {
-    const r = await fetch(cfg.ipfs + cid, { signal: AbortSignal.timeout(15000) });
-    return r.ok ? await r.json() : null;
+    return await Promise.any(GATEWAYS.map(async (gw) => {
+      const r = await fetch(gw + cid, { signal: AbortSignal.timeout(15000) });
+      if (!r.ok) throw new Error(String(r.status));
+      return await r.json();
+    }));
   } catch {
     return null;
   }
 }
 
+// The website also writes the strategy into the CREATE2 salt of the launch transaction:
+// "FEEV" | 'L'/'S' | leverage | market (10 bytes ASCII) | random | counter
+const NEW_TOKEN_ABI = parseAbi(["function newTokenV6((string name,string symbol,string meta,uint8 dexThresh,bytes32 salt,uint8 migratorType,address quoteToken,uint256 quoteAmt,address beneficiary,bytes permitData,bytes32 extensionID,bytes extensionData,uint8 dexId,uint8 lpFeeProfile,uint16 buyTaxRate,uint16 sellTaxRate,uint64 taxDuration,uint64 antiFarmerDuration,uint16 mktBps,uint16 deflationBps,uint16 dividendBps,uint16 lpBps,uint256 minimumShareBalance,address dividendToken,address commissionReceiver,uint8 tokenVersion) params) payable returns (address)"]);
+async function saltStrategy(txHash) {
+  try {
+    const tx = await publicClient.getTransaction({ hash: txHash });
+    const b = hexToBytes(decodeFunctionData({ abi: NEW_TOKEN_ABI, data: tx.input }).args[0].salt);
+    if (new TextDecoder().decode(b.slice(0, 4)) !== "FEEV") return null;
+    const market = new TextDecoder().decode(b.slice(6, 16)).replace(/\0+$/, "");
+    if (![0x4c, 0x53].includes(b[4])) return null;
+    return parseStrategy(`feeverage:${market}:${b[4] === 0x4c ? "L" : "S"}:${b[5]}`);
+  } catch {
+    return null;
+  }
+}
+
+// Strategy for a launch: description tag, then salt, then the manual lists.
+async function strategyOf(c) {
+  const meta = await fetchMeta(c.meta);
+  return parseStrategy(meta?.description)
+    ?? (await saltStrategy(c.tx))
+    ?? parseStrategy("feeverage:" + (cfg.strategies[c.token.toLowerCase()] || KNOWN[c.token.toLowerCase()] || ""));
+}
+
+function register(c, strat) {
+  const index = state.registry.length;
+  state.registry.push({
+    index, token: c.token, deployer: c.creator, name: c.name, symbol: c.symbol, meta: c.meta, ...strat,
+    launchedBlock: c.block, launchTx: c.tx,
+    hlAccount: hlAccountFor(cfg.mnemonic, index).address,
+  });
+  log(`new token #${index} ${c.symbol} → ${strat.leverage}x ${strat.isLong ? "long" : "short"} ${strat.market}`);
+}
+
 // ---------------------------------------------------------------- 1. discover
 
 async function discover() {
+  // Launches whose strategy couldn't be read yet are retried every cycle without holding up the scan.
+  state.waiting ??= [];
+  for (const c of [...state.waiting]) {
+    const strat = await strategyOf(c);
+    if (!strat) continue;
+    state.waiting = state.waiting.filter((w) => w.token !== c.token);
+    if (!state.registry.some((r) => r.token.toLowerCase() === c.token.toLowerCase())) register(c, strat);
+    saveState(state);
+  }
   await scan("launchBlock", async (fromBlock, toBlock) => {
     const logs = await publicClient.getLogs({ address: cfg.portal, event: EV_CREATED, fromBlock, toBlock });
     if (!logs.length) return;
@@ -116,23 +167,15 @@ async function discover() {
     for (let i = 0; i < logs.length; i++) {
       const e = logs[i], info = infos[i];
       if (info.status !== "success" || info.result.marketingWallet.toLowerCase() !== op) continue;
-      const token = e.args.token;
-      if (state.registry.some((r) => r.token.toLowerCase() === token.toLowerCase())) continue;
-      let meta = null;
-      for (let k = 0; k < 3 && !meta; k++) meta = await fetchMeta(e.args.meta);
-      const strat = parseStrategy(meta?.description);
-      if (!strat) {
-        if (!meta) log(`  ${e.args.symbol}: metadata ${e.args.meta} not reachable yet, will retry`);
-        if (!meta) throw Object.assign(new Error("IPFS not reachable"), { keepRange: true }); // rescans this range next cycle
-        continue;
+      const c = { token: e.args.token, creator: e.args.creator, name: e.args.name, symbol: e.args.symbol, meta: e.args.meta, block: String(e.blockNumber), tx: e.transactionHash };
+      if (state.registry.some((r) => r.token.toLowerCase() === c.token.toLowerCase())) continue;
+      if (state.waiting.some((w) => w.token === c.token)) continue;
+      const strat = await strategyOf(c);
+      if (strat) register(c, strat);
+      else {
+        state.waiting.push(c);
+        log(`  ${c.symbol} ${c.token}: strategy not readable yet (IPFS), will retry`);
       }
-      const index = state.registry.length;
-      state.registry.push({
-        index, token, deployer: e.args.creator, name: e.args.name, symbol: e.args.symbol, meta: e.args.meta, ...strat,
-        launchedBlock: String(e.blockNumber), launchTx: e.transactionHash,
-        hlAccount: hlAccountFor(cfg.mnemonic, index).address,
-      });
-      log(`new token #${index} ${e.args.symbol} → ${strat.leverage}x ${strat.isLong ? "long" : "short"} ${strat.market}`);
     }
   });
 }
