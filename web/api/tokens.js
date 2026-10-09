@@ -9,7 +9,7 @@
 import { ethers } from "ethers";
 
 export const SEG = 50_000;
-const RPCS = [process.env.BSC_RPC, "https://bsc-rpc.publicnode.com", "https://bsc.drpc.org", "https://1rpc.io/bnb", "https://binance.llamarpc.com"].filter(Boolean);
+const RPCS = [process.env.BSC_RPC, "https://bsc-rpc.publicnode.com", "https://bsc.drpc.org", "https://binance.llamarpc.com", "https://1rpc.io/bnb", "https://bsc.blockpi.network/v1/rpc/public", "https://bsc.meowrpc.com"].filter(Boolean);
 const PORTAL = "0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0";
 const HELPER = "0x53841c73217735F37BC1775538b03b23feFD8346";
 const MULTICALL = "0xcA11bde05977b3631167028862bE2a173976CA11";
@@ -27,22 +27,42 @@ const TOPIC = P.getEvent("TokenCreated").topicHash;
 const TAG = /feeverage:([A-Z0-9]{1,12}):([LS]):(\d{1,2})\b/;
 
 let good = 0;
+let deadline = Infinity;
 async function rpc(method, params) {
   let err;
-  for (let round = 0; round < 2; round++) {
-    for (let k = 0; k < RPCS.length; k++) {
-      const i = (good + k) % RPCS.length;
-      try {
-        const r = await fetch(RPCS[i], { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), signal: AbortSignal.timeout(7000) });
-        const j = await r.json();
-        if (j.error) throw new Error(j.error.message);
-        if (j.result === undefined) throw new Error("empty");
-        good = i;
-        return j.result;
-      } catch (e) { err = e; }
-    }
+  for (let k = 0; k < RPCS.length; k++) {
+    if (Date.now() > deadline) throw new Error("time budget used");
+    const i = (good + k) % RPCS.length;
+    try {
+      const r = await fetch(RPCS[i], { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), signal: AbortSignal.timeout(4000) });
+      const j = await r.json();
+      if (j.error) throw new Error(j.error.message);
+      if (j.result === undefined) throw new Error("empty");
+      good = i;
+      return j.result;
+    } catch (e) { err = e; }
   }
   throw err;
+}
+
+// /api/tokens?ping=1 → which BNB Chain endpoints this server can reach, and how fast.
+async function ping() {
+  return Promise.all(RPCS.map(async (url) => {
+    const t0 = Date.now();
+    try {
+      const call = async (method, params) => {
+        const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), signal: AbortSignal.timeout(5000) });
+        const j = await r.json();
+        if (j.error) throw new Error(j.error.message);
+        return j.result;
+      };
+      const latest = Number(await call("eth_blockNumber", []));
+      const logs = await call("eth_getLogs", [{ address: PORTAL, topics: [TOPIC], fromBlock: ethers.toQuantity(latest - 2000), toBlock: ethers.toQuantity(latest) }]);
+      return { url, ok: true, latest, launches2000: logs.length, ms: Date.now() - t0 };
+    } catch (e) {
+      return { url, ok: false, error: String(e?.message || e).slice(0, 120), ms: Date.now() - t0 };
+    }
+  }));
 }
 
 async function logs(a, b) {
@@ -118,6 +138,7 @@ export default async function handler(req, res) {
   res.setHeader("content-type", "application/json");
   res.setHeader("access-control-allow-origin", "*");
   const q = new URL(req.url, "http://x").searchParams;
+  if (q.get("ping")) { res.setHeader("cache-control", "no-store"); return res.end(JSON.stringify(await ping(), null, 1)); }
   const fee = String(q.get("fee") || "").toLowerCase();
   const start = Number(q.get("start"));
   const seg = Number(q.get("seg"));
@@ -125,13 +146,15 @@ export default async function handler(req, res) {
     res.statusCode = 400;
     return res.end(JSON.stringify({ error: "fee, start and seg are required" }));
   }
+  // Always answer within ~9 s; the browser reads the chain itself when this server can't.
+  deadline = Date.now() + 9000;
   try {
     const latest = Number(await rpc("eth_blockNumber", []));
     const a = start + seg * SEG;
     if (a > latest) { res.setHeader("cache-control", "no-store"); return res.end(JSON.stringify({ seg, from: a, to: a - 1, latest, final: false, tokens: [] })); }
     const end = a + SEG - 1;
     const b = Math.min(end, latest);
-    const out = await segment(fee, a, b);
+    const out = await Promise.race([segment(fee, a, b), new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 9500))]);
     // Final once the whole segment is at least ~1 minute old (no reorg can touch it).
     const final = end <= latest - 150 && out.tokens.every((x) => x.tag);
     res.setHeader("cache-control", final ? "public, max-age=31536000, s-maxage=31536000, immutable" : "public, s-maxage=4, stale-while-revalidate=10");

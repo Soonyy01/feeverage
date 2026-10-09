@@ -364,7 +364,8 @@ async function pool(items, n, fn) {
 }
 
 // Direct chain access from the browser, used when the site's server can't answer.
-const LOG_RPCS = () => [...new Set([...(C.logRpcs || []), "https://bsc-rpc.publicnode.com", "https://bsc.drpc.org", "https://1rpc.io/bnb", C.rpc])];
+// Last resort is the site's own relay (api/rpc.js), for networks that block public endpoints.
+const LOG_RPCS = () => [...new Set([...(C.logRpcs || []), "https://bsc-rpc.publicnode.com", "https://bsc.drpc.org", "https://binance.llamarpc.com", "https://1rpc.io/bnb", "https://bsc.blockpi.network/v1/rpc/public", "api/rpc"])];
 let logRpc = 0;
 async function rawRpc(method, params) {
   const urls = LOG_RPCS();
@@ -372,7 +373,7 @@ async function rawRpc(method, params) {
   for (let k = 0; k < urls.length; k++) {
     const i = (logRpc + k) % urls.length;
     try {
-      const r = await fetch(urls[i], { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), signal: AbortSignal.timeout(8000) });
+      const r = await fetch(urls[i], { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), signal: AbortSignal.timeout(6000) });
       const j = await r.json();
       if (j.error) throw new Error(j.error.message);
       logRpc = i;
@@ -413,7 +414,7 @@ async function oursOnly(cands) {
 export const SEG = 50_000;
 async function segFromServer(fee, start, n) {
   if (typeof location === "undefined" || !/^https?:/.test(location.protocol)) throw new Error("no server");
-  const r = await fetch(`api/tokens?${new URLSearchParams({ fee, start: String(start), seg: String(n) })}`, { signal: AbortSignal.timeout(15000) });
+  const r = await fetch(`api/tokens?${new URLSearchParams({ fee, start: String(start), seg: String(n) })}`, { signal: AbortSignal.timeout(11000) });
   if (!r.ok) throw new Error("server " + r.status);
   const j = await r.json();
   if (!Array.isArray(j.tokens)) throw new Error("server data");

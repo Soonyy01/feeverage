@@ -3,8 +3,10 @@
 // no key ever touches this server.
 const UPSTREAMS = [
   process.env.BSC_RPC,
-  "https://bsc-dataseed.bnbchain.org",
   "https://bsc-rpc.publicnode.com",
+  "https://bsc.drpc.org",
+  "https://binance.llamarpc.com",
+  "https://bsc-dataseed.bnbchain.org",
   "https://bsc-dataseed1.binance.org",
 ].filter(Boolean);
 
@@ -36,10 +38,12 @@ export default async function handler(req, res) {
   }
   for (const url of UPSTREAMS) {
     try {
-      const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: raw, signal: AbortSignal.timeout(15000) });
+      const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: raw, signal: AbortSignal.timeout(6000) });
       if (!r.ok) continue;
       const txt = await r.text();
-      JSON.parse(txt); // must be valid JSON
+      const j = JSON.parse(txt); // must be valid JSON
+      // An endpoint that refuses the method (e.g. eth_getLogs on bsc-dataseed): try the next one.
+      if (!Array.isArray(j) && j.error && url !== UPSTREAMS.at(-1)) continue;
       return res.end(txt);
     } catch {}
   }
