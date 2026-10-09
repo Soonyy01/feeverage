@@ -33,7 +33,7 @@ window.FEEVERAGE_CONFIG = {
   // Trade tax choices offered at launch (%), all of it funds the position.
   taxOptions: [1, 3, 5, 10],
   // First block to look for launches (set it to the block of the day you go live).
-  startBlock: 0,
+  startBlock: 126550000,
 
   // Hyperliquid
   hlInfo: "https://api.hyperliquid.xyz/info",
