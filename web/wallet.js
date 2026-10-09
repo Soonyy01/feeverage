@@ -2,9 +2,9 @@
 // mounted from esm.sh with no build step. If Privy cannot load, falls back to an
 // injected wallet (window.ethereum).
 const C = {
-  chainId: 4663,
-  rpc: "https://rpc.mainnet.chain.robinhood.com",
-  explorer: "https://robinhoodchain.blockscout.com",
+  chainId: 56,
+  rpc: "https://bsc-dataseed.bnbchain.org",
+  explorer: "https://bscscan.com",
   privyAppId: "",
   ...(window.FEEVERAGE_CONFIG || {}),
 };
@@ -14,11 +14,11 @@ let privy = null; // { login, logout, wallets }
 
 const chain = {
   id: C.chainId,
-  name: "Robinhood Chain",
-  network: "robinhood",
-  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  name: "BNB Smart Chain",
+  network: "bsc",
+  nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
   rpcUrls: { default: { http: [C.rpc] }, public: { http: [C.rpc] } },
-  blockExplorers: { default: { name: "Blockscout", url: C.explorer } },
+  blockExplorers: { default: { name: "BscScan", url: C.explorer } },
 };
 
 function emit(patch) {
@@ -30,6 +30,9 @@ function pick(wallets) {
   if (!wallets?.length) return null;
   return wallets.find((w) => w.walletClientType !== "privy") ?? wallets[0];
 }
+
+const SESSION = "feev.privy.session";
+let privyLoading = null;
 
 async function loadPrivy() {
   const deps = "?deps=react@18.3.1,react-dom@18.3.1";
@@ -48,6 +51,7 @@ async function loadPrivy() {
     React.useEffect(() => {
       privy = { login: p.login, logout: p.logout, wallets };
       const w = pick(wallets);
+      try { p.authenticated ? localStorage.setItem(SESSION, "1") : p.ready && localStorage.removeItem(SESSION); } catch {}
       emit({ ready: p.ready, mode: "privy", authenticated: p.authenticated, address: p.authenticated && w ? w.address : null });
     }, [p.ready, p.authenticated, wallets]);
     return null;
@@ -94,6 +98,26 @@ async function ensureInjectedChain() {
   }
 }
 
+// Privy (React + its SDK) is large, so it only loads when it is needed: right away for a
+// returning signed-in visitor, otherwise when someone presses Connect (and quietly in the
+// background once the page is idle, so that press is quick).
+function ensurePrivy() {
+  privyLoading ??= (async () => {
+    await Promise.race([loadPrivy(), new Promise((_, rej) => setTimeout(() => rej(new Error("Privy timeout")), 15000))]);
+    for (let i = 0; i < 100 && !(privy && state.mode === "privy" && state.ready); i++) await new Promise((r) => setTimeout(r, 100));
+  })().catch((e) => {
+    console.warn("Privy unavailable, falling back to injected wallet:", e);
+    if (window.ethereum) {
+      emit({ ready: true, mode: "injected", error: null });
+      window.ethereum.on?.("accountsChanged", (a) => emit({ authenticated: Boolean(a[0]), address: a[0] ?? null }));
+    } else emit({ ready: true, mode: "none", error: e.message });
+  });
+  return privyLoading;
+}
+
+// BNB Chain makes a block about every second: check for receipts that often, not every 4 s.
+const fast = (p) => { p.pollingInterval = 800; return p; };
+
 export const wallet = {
   get state() {
     return state;
@@ -103,6 +127,7 @@ export const wallet = {
     fn(state);
   },
   async connect() {
+    if (state.mode === "lazy" || state.mode === "loading") await ensurePrivy();
     if (state.mode === "privy" && privy) return privy.login();
     if (state.mode === "injected") {
       const [a] = await window.ethereum.request({ method: "eth_requestAccounts" });
@@ -114,6 +139,7 @@ export const wallet = {
   },
   async disconnect() {
     if (state.mode === "privy" && privy) await privy.logout();
+    try { localStorage.removeItem(SESSION); } catch {}
     emit({ authenticated: false, address: null });
   },
   async signer() {
@@ -124,21 +150,18 @@ export const wallet = {
       if (!w) throw new Error("Wallet is still connecting. Try again in a second.");
       await w.switchChain(C.chainId);
       const eip1193 = await w.getEthereumProvider();
-      return new ethers.BrowserProvider(eip1193).getSigner();
+      return fast(new ethers.BrowserProvider(eip1193)).getSigner();
     }
     await ensureInjectedChain();
-    return new ethers.BrowserProvider(window.ethereum).getSigner();
+    return fast(new ethers.BrowserProvider(window.ethereum)).getSigner();
   },
 };
 
-(async () => {
-  try {
-    await Promise.race([loadPrivy(), new Promise((_, rej) => setTimeout(() => rej(new Error("Privy timeout")), 15000))]);
-  } catch (e) {
-    console.warn("Privy unavailable, falling back to injected wallet:", e);
-    if (window.ethereum) {
-      emit({ ready: true, mode: "injected", error: null });
-      window.ethereum.on?.("accountsChanged", (a) => emit({ authenticated: Boolean(a[0]), address: a[0] ?? null }));
-    } else emit({ ready: true, mode: "none", error: e.message });
-  }
+(() => {
+  let returning = false;
+  try { returning = Boolean(localStorage.getItem(SESSION)); } catch {}
+  if (returning) return void ensurePrivy();
+  emit({ ready: true, mode: "lazy" });
+  const idle = window.requestIdleCallback ?? ((fn) => setTimeout(fn, 1));
+  setTimeout(() => idle(() => ensurePrivy()), 4000);
 })();

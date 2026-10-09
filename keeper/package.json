@@ -2,7 +2,7 @@
   "name": "feeverage-keeper",
   "version": "0.1.0",
   "private": true,
-  "description": "Collects Pons creator fees on Robinhood Chain, bridges them to Hyperliquid and opens each token's leveraged position.",
+  "description": "Collects flap.sh trade tax on BNB Chain, bridges them to Hyperliquid and opens each token's leveraged position.",
   "type": "module",
   "engines": { "node": ">=22.12" },
   "scripts": {

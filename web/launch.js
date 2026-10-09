@@ -1,12 +1,13 @@
 import {
-  $, C, E, FACTORY_ABI, ROUTER_ABI, ZERO, bars, chain, errMsg, esc, fmt, initShell, isAddr, market,
-  onMarkets, provider, px, readChain, short, store, strategyLine, t, tokenUrl, wallet,
+  $, C, E, KEY, NATIVE, PORTAL_ABI, TOKEN_ABI, TOKEN_TAXED_V3, ZERO, bars, chain, errMsg, esc, fmt, initShell, isAddr, market,
+  onMarkets, provider, px, readChain, recordTrade, store, strategyLine, t, tokenUrl, wallet,
 } from "./core.js";
 
 initShell();
 
 const form = { market: "BTC", isLong: true, lev: 5 };
 
+// ------------------------------------------------------------------ strategy pickers
 function renderMarkets() {
   $("markets").innerHTML = C.markets.map((m) =>
     `<button type="button" data-m="${m}" aria-pressed="${m === form.market}">${m}<span class="px" data-px="${m}">${market[m] ? px(market[m].px) : ""}</span></button>`,
@@ -24,39 +25,26 @@ document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("clic
   document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
   update();
 }));
+$("tax").innerHTML = C.taxOptions.map((v) => `<option value="${v}" ${v === 3 ? "selected" : ""}>${v}%</option>`).join("");
 ["lev", "buy", "symbol", "tax"].forEach((id) => $(id).addEventListener("input", update));
+$("tax").addEventListener("change", update);
+
 // ------------------------------------------------------------------ logo: pick an image from the gallery
-// The image is squared and shrunk in the browser right away (no upload, nothing to wait for).
-// At launch it is stored permanently: in the site's Blob storage when that is connected,
-// otherwise on Robinhood Chain itself (one small extra transaction), served by /api/logo.
+// Squared and shrunk in the browser right away. At launch it is pinned on IPFS together
+// with the token's description through flap.sh, which is what wallets and explorers read.
 let logoBlob = null;
-const setLogo = (url) => {
-  $("logo").value = url;
-  $("logoPrev").style.backgroundImage = url ? `url("${url.replace(/"/g, "")}")` : "";
-  $("logoPrev").classList.toggle("has", Boolean(url));
-};
 const dropState = (txt, cls = "") => { $("dropState").textContent = txt; $("dropState").className = cls || "muted"; };
 
-const LOGO_MAX = 16 * 1024; // keeps the on-chain copy cheap
 async function shrink(file) {
-  if (file.type === "image/gif" && file.size <= LOGO_MAX) return file; // small gifs stay animated
+  if (file.type === "image/gif" && file.size <= 900 * 1024) return file; // small gifs stay animated
   const img = await createImageBitmap(file);
   const side = Math.min(img.width, img.height);
-  let last = null;
-  for (const px of [256, 200, 160, 128]) {
-    const c = document.createElement("canvas");
-    c.width = c.height = Math.min(px, side);
-    const g = c.getContext("2d");
-    g.imageSmoothingQuality = "high";
-    g.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, c.width, c.height);
-    for (const q of [0.9, 0.8, 0.7, 0.55, 0.4]) {
-      let b = await new Promise((r) => c.toBlob(r, "image/webp", q));
-      if (!b || b.type !== "image/webp") b = await new Promise((r) => c.toBlob(r, "image/jpeg", q)); // Safari
-      last = b;
-      if (b && b.size <= LOGO_MAX) return b;
-    }
-  }
-  return last;
+  const c = document.createElement("canvas");
+  c.width = c.height = Math.min(512, side);
+  const g = c.getContext("2d");
+  g.imageSmoothingQuality = "high";
+  g.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, c.width, c.height);
+  return new Promise((r) => c.toBlob(r, "image/png"));
 }
 
 async function useFile(file) {
@@ -64,7 +52,6 @@ async function useFile(file) {
   try {
     dropState("…");
     logoBlob = await shrink(file);
-    $("logo").value = "";
     $("logoPrev").style.backgroundImage = `url("${URL.createObjectURL(logoBlob)}")`;
     $("logoPrev").classList.add("has");
     dropState(`${t("l.logo.ok")} ✓ · ${t("l.logo.change")}`, "ok");
@@ -74,22 +61,18 @@ async function useFile(file) {
   }
 }
 
-// Turns the picked image into a permanent public URL. Called only when launching.
-const MIME = { "image/png": 1, "image/jpeg": 2, "image/webp": 3, "image/gif": 4 };
-async function storeLogo(signer, me) {
-  // 1) Blob storage, if the site has it (free, instant).
-  try {
-    const r = await fetch("api/upload", { method: "POST", headers: { "content-type": logoBlob.type }, body: logoBlob, signal: AbortSignal.timeout(15000) });
-    const j = await r.json().catch(() => ({}));
-    if (r.ok && j.url) return j.url;
-  } catch {}
-  // 2) On-chain: the image bytes ride in a 0-ETH transaction to yourself.
-  setStatus(t("l.s.logo"));
-  const bytes = new Uint8Array(await logoBlob.arrayBuffer());
-  const data = E.concat([E.toUtf8Bytes("FEEVLOGO"), new Uint8Array([MIME[logoBlob.type] ?? 3]), bytes]);
-  const tx = await signer.sendTransaction({ to: me, value: 0n, data });
-  await tx.wait();
-  return `${location.origin}/api/logo?tx=${tx.hash}`;
+// No image picked: draw a simple one from the ticker, in the site's colours.
+async function defaultLogo(symbol) {
+  const c = document.createElement("canvas");
+  c.width = c.height = 512;
+  const g = c.getContext("2d");
+  g.fillStyle = "#feea05"; g.fillRect(0, 0, 512, 512);
+  g.strokeStyle = "#111"; g.lineWidth = 28; g.strokeRect(14, 14, 484, 484);
+  g.fillStyle = "#111"; g.textAlign = "center"; g.textBaseline = "middle";
+  const txt = (symbol || "?").slice(0, 4);
+  g.font = `900 ${txt.length > 2 ? 150 : 230}px Archivo, "Arial Black", sans-serif`;
+  g.fillText(txt, 256, 270);
+  return new Promise((r) => c.toBlob(r, "image/png"));
 }
 
 $("logoFile").addEventListener("change", (e) => useFile(e.target.files[0]));
@@ -99,25 +82,61 @@ const drop = $("drop");
 drop.addEventListener("drop", (e) => useFile(e.dataTransfer.files[0]));
 addEventListener("paste", (e) => {
   const f = [...(e.clipboardData?.files ?? [])].find((x) => x.type.startsWith("image/"));
-  if (f && !$("drop").hidden) useFile(f);
+  if (f) useFile(f);
 });
 
-// Optional: paste a link instead of uploading.
-let linkMode = false;
-$("logoMode").addEventListener("click", () => {
-  linkMode = !linkMode;
-  $("drop").hidden = linkMode;
-  $("logoUrl").hidden = !linkMode;
-  $("logoMode").textContent = linkMode ? t("l.logo.file") : t("l.logo.link");
-  setLogo(linkMode ? $("logoUrl").value.trim() : "");
-  if (!linkMode) logoBlob = null;
-  dropState("");
-});
-$("logoUrl").addEventListener("input", () => {
-  const u = $("logoUrl").value.trim();
-  setLogo(/^https?:\/\//.test(u) ? u : "");
-});
+// Pins image + metadata on flap.sh's IPFS (through this site's server, see api/flapmeta.js).
+async function uploadMeta({ file, description, twitter, telegram, website, creator }) {
+  const fd = new FormData();
+  fd.append("operations", JSON.stringify({
+    query: "mutation Create($file: Upload!, $meta: MetadataInput!) { create(file: $file, meta: $meta) }",
+    variables: { file: null, meta: { website: website || null, twitter: twitter || null, telegram: telegram || null, description, creator } },
+  }));
+  fd.append("map", JSON.stringify({ 0: ["variables.file"] }));
+  fd.append("0", file, "logo." + (file.type.split("/")[1] || "png"));
+  let lastErr = "";
+  for (const url of ["api/flapmeta", C.flapUpload]) {
+    try {
+      const r = await fetch(url, { method: "POST", body: fd, signal: AbortSignal.timeout(45000) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && typeof j?.data?.create === "string") return j.data.create;
+      lastErr = j?.errors?.[0]?.message || j?.error || `HTTP ${r.status}`;
+    } catch (e) { lastErr = e.message; }
+  }
+  throw new Error(t("l.e.meta") + (lastErr ? ` (${lastErr})` : ""));
+}
 
+// flap.sh tax tokens must live at an address ending in 7777. The token is a minimal
+// proxy deployed by the Portal with CREATE2, so the address follows from the salt.
+// The search runs in a Web Worker (salt-worker.js), off the main thread.
+const INIT_HASH = () => E.keccak256("0x3d602d80600a3d3981f3363d3d373d3d3d363d73" + C.taxTokenImpl.slice(2).toLowerCase() + "5af43d82803e903d91602b57fd5bf3");
+function findSalt() {
+  const initHash = INIT_HASH();
+  return new Promise((resolve, reject) => {
+    let w;
+    try { w = new Worker("salt-worker.js"); } catch { return resolve(findSaltInline(initHash)); }
+    w.onmessage = ({ data }) => { w.terminate(); resolve(data); };
+    w.onerror = () => { w.terminate(); resolve(findSaltInline(initHash)); };
+    w.postMessage({ portal: C.portal, initHash });
+  });
+}
+async function findSaltInline(initHash) {
+  let salt = E.hexlify(E.randomBytes(32));
+  for (let i = 1; ; i++) {
+    const addr = E.getCreate2Address(C.portal, salt, initHash);
+    if (addr.toLowerCase().endsWith("7777")) return { salt, address: addr };
+    salt = E.keccak256(salt);
+    if (i % 1500 === 0) await new Promise((r) => setTimeout(r, 0));
+  }
+}
+
+// The address search doesn't depend on the form, so it runs in the background as soon as
+// the page is open; by the time someone presses Launch it is usually already done.
+let saltJob = null;
+const nextSalt = () => (saltJob ??= findSalt());
+setTimeout(nextSalt, 600);
+
+// ------------------------------------------------------------------ summary
 function update() {
   const maxL = Math.min(C.maxLeverage, market[form.market]?.maxLev ?? C.maxLeverage);
   $("lev").max = String(maxL);
@@ -141,19 +160,10 @@ function update() {
   $("sumMark").textContent = market[form.market] ? px(market[form.market].px) : "—";
 
   const buy = Math.max(0, Number($("buy").value) || 0);
-  $("sumBuy").textContent = `${fmt(buy, 4)} ETH`;
-  if (chain.launchFee != null) {
-    const fee = Number(E.formatEther(chain.launchFee));
-    $("sumFee").textContent = `${fmt(fee, 4)} ETH`;
-    $("sumTotal").textContent = `${fmt(fee + buy, 4)} ETH`;
-  } else {
-    $("sumFee").textContent = chain.ok ? "…" : "read on-chain";
-    $("sumTotal").textContent = `${fmt(buy, 4)} ETH + fee`;
-  }
-  renderChecks();
+  $("sumBuy").textContent = `${fmt(buy, 4)} ${NATIVE}`;
+  $("sumFee").textContent = `${$("tax").value}% ${t("l.tax.each")}`;
+  $("sumTotal").textContent = `${fmt(buy, 4)} ${NATIVE} + gas`;
 }
-
-function renderChecks() {}
 
 function setStatus(msg, kind = "") {
   $("launchStatus").className = "status " + kind;
@@ -162,16 +172,13 @@ function setStatus(msg, kind = "") {
 
 async function refreshGate() {
   await readChain();
-  if (chain.ok) {
-    $("tax").max = String(Number(chain.maxTaxBps) / 100);
-    const ok = wallet.state.address ? chain.canLaunchMe : chain.launchOpen;
-    $("gate").innerHTML = `<span class="sq ${ok ? "live" : "off"}"></span>${ok ? t("l.open") : t("l.gated")}`;
-  } else {
-    $("gate").innerHTML = `<span class="sq off"></span>${t("l.unreach")}`;
-  }
+  $("gate").innerHTML = chain.ok
+    ? `<span class="sq live"></span>${t("l.open")}`
+    : `<span class="sq off"></span>${t("l.unreach")}`;
   update();
 }
 
+// ------------------------------------------------------------------ launch
 $("launchForm").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const name = $("name").value.trim(), symbol = $("symbol").value.trim().toUpperCase();
@@ -187,49 +194,57 @@ $("launchForm").addEventListener("submit", async (ev) => {
     setStatus(t("l.s.conn"));
     const signer = await wallet.signer();
     const me = await signer.getAddress();
-    const f = new E.Contract(C.factory, FACTORY_ABI, provider);
-    const [fee, allowed, econ] = await Promise.all([f.launchFee(), f.canLaunch(me), f.previewLaunchEconomics(C.launchConfigId, ZERO)]);
-    if (!allowed) throw new Error(t("l.c.gate.x"));
-    if (!linkMode && logoBlob && !$("logo").value) $("logo").value = await storeLogo(signer, me);
 
-    const taxBps = Math.round(Math.min(Number(chain.maxTaxBps) / 100, Math.max(0, Number($("tax").value) || 0)) * 100);
     const strat = { market: form.market, isLong: form.isLong, leverage: form.lev };
     const desc = ($("desc").value.trim() + "\n\n" + strategyLine(strat)).trim();
-    if (new TextEncoder().encode(desc).length > 2048) throw new Error(t("l.e.long"));
-    const params = [
-      name, symbol, $("logo").value.trim(), desc,
-      [$("x").value.trim(), $("tg").value.trim(), "", $("web").value.trim(), ""],
-      C.feeRecipient, taxBps, false, econ, E.hexlify(E.randomBytes(32)),
-    ];
-    const quoteIn = E.parseEther(String(buyEth));
-    let tx;
-    if (quoteIn > 0n) {
-      // Launch + your first buy in one transaction.
-      const router = new E.Contract(C.router, ROUTER_ABI, signer);
-      const args = [params, C.launchConfigId, ZERO, quoteIn, 0n, me, [me]];
-      setStatus(t("l.s.sim"));
-      await router.launchAndBuy.staticCall(...args, { value: fee + quoteIn });
-      setStatus(t("l.s.confirm"));
-      tx = await router.launchAndBuy(...args, { value: fee + quoteIn });
-    } else {
-      // Launch only, straight on the factory: you pay just the launch fee.
-      const fs = new E.Contract(C.factory, FACTORY_ABI, signer);
-      const args = [params, C.launchConfigId, ZERO];
-      setStatus(t("l.s.sim"));
-      await fs.launchToken.staticCall(...args, { value: fee });
-      setStatus(t("l.s.confirm"));
-      tx = await fs.launchToken(...args, { value: fee });
-    }
+    if (desc.length > 1500) throw new Error(t("l.e.long"));
+
+    setStatus(t("l.s.meta"));
+    const file = logoBlob ?? (await defaultLogo(symbol));
+    const [cid, { salt, address }] = await Promise.all([
+      uploadMeta({ file, description: desc, twitter: $("x").value.trim(), telegram: $("tg").value.trim(), website: $("web").value.trim(), creator: me }),
+      nextSalt(),
+    ]);
+
+    const taxBps = Number($("tax").value) * 100;
+    const quoteAmt = E.parseEther(String(buyEth));
+    const params = {
+      name, symbol, meta: cid,
+      dexThresh: 1, // FOUR_FIFTHS: lists on PancakeSwap at 80% of the curve
+      salt,
+      migratorType: 1, // V2_MIGRATOR (required for tax tokens)
+      quoteToken: ZERO, quoteAmt,
+      beneficiary: C.feeRecipient, // the tax (creator fees) goes to the operator that funds the position
+      permitData: "0x", extensionID: E.ZeroHash, extensionData: "0x",
+      dexId: 0, lpFeeProfile: 0,
+      buyTaxRate: taxBps, sellTaxRate: taxBps,
+      taxDuration: BigInt(365 * 24 * 3600), antiFarmerDuration: BigInt(24 * 3600),
+      mktBps: 10000, deflationBps: 0, dividendBps: 0, lpBps: 0,
+      minimumShareBalance: 0n, dividendToken: ZERO,
+      commissionReceiver: C.feeRecipient,
+      tokenVersion: TOKEN_TAXED_V3,
+    };
+    const portalW = new E.Contract(C.portal, PORTAL_ABI, signer);
+    setStatus(t("l.s.sim"));
+    await portalW.newTokenV6.staticCall(params, { value: quoteAmt });
+    setStatus(t("l.s.confirm"));
+    const tx = await portalW.newTokenV6(params, { value: quoteAmt });
     setStatus(`${t("l.s.sent")} <a href="${C.explorer}/tx/${tx.hash}" target="_blank" rel="noopener">view tx</a>`);
+    saltJob = null; // this address is taken now
+    setTimeout(nextSalt, 2000);
     const rc = await tx.wait();
-    const ev2 = rc.logs.map((l) => { try { return f.interface.parseLog(l); } catch { return null; } }).find((x) => x?.name === "TokenLaunched");
-    const token = ev2?.args?.token, curve = ev2?.args?.curve;
-    if (token) {
-      const mine = store.get("feeverage.launches", []);
-      mine.unshift({ token, curve, deployer: me, block: rc.blockNumber, name, symbol, logo: $("logo").value.trim(), ...strat, at: Date.now(), tx: tx.hash });
-      store.set("feeverage.launches", mine.slice(0, 50));
+    const iface = new E.Interface(PORTAL_ABI);
+    const ev2 = rc.logs.map((l) => { try { return iface.parseLog(l); } catch { return null; } }).find((x) => x?.name === "TokenCreated");
+    const token = ev2?.args?.token ?? address;
+
+    const mine = store.get(KEY + "launches", []);
+    mine.unshift({ token, deployer: me, block: rc.blockNumber, name, symbol, meta: cid, description: desc, ...strat, at: Date.now(), tx: tx.hash });
+    store.set(KEY + "launches", mine.slice(0, 50));
+    if (quoteAmt > 0n) {
+      const got = await new E.Contract(token, TOKEN_ABI, provider).balanceOf(me).catch(() => 0n);
+      recordTrade(me, { token, side: "buy", eth: buyEth, tokens: Number(E.formatEther(got)), tx: tx.hash, block: rc.blockNumber });
     }
-    setStatus(`✓ ${esc(symbol)} ${t("l.s.live")} ${token ? `<a href="${tokenUrl(token)}">${t("l.s.open")}</a>` : ""}`, "ok");
+    setStatus(`✓ ${esc(symbol)} ${t("l.s.live")} <a href="${tokenUrl(token)}">${t("l.s.open")}</a>`, "ok");
   } catch (e) {
     setStatus(errMsg(e), "err");
   } finally {

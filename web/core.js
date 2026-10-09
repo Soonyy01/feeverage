@@ -9,16 +9,22 @@ const DEFAULTS = {
   feeRecipient: "",
   keeperApi: "",
   xUrl: "",
-  chainId: 4663,
-  rpc: "https://rpc.mainnet.chain.robinhood.com",
-  explorer: "https://robinhoodchain.blockscout.com",
-  router: "0xe33E9E479dF8802cb0866d5d05258bEc4cF62948",
-  factory: "0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e",
-  launchConfigId: 0,
+  chainId: 56,
+  native: "BNB",
+  rpc: "https://bsc-dataseed.bnbchain.org",
+  rpcFallbacks: ["https://bsc-rpc.publicnode.com", "https://bsc-dataseed1.binance.org"],
+  explorer: "https://bscscan.com",
+  // flap.sh on BNB Chain
+  portal: "0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0",
+  taxTokenImpl: "0x024f18294970B5c76c0691b87f138A0317156422",
+  taxHelper: "0x53841c73217735F37BC1775538b03b23feFD8346",
+  flapUpload: "https://funcs.flap.sh/api/upload",
+  ipfs: "https://flap.mypinata.cloud/ipfs/",
+  taxOptions: [1, 3, 5, 10],
   startBlock: 0,
   hlInfo: "https://api.hyperliquid.xyz/info",
   hlWs: "wss://api.hyperliquid.xyz/ws",
-  markets: ["BTC", "ETH", "HYPE", "SOL", "XRP", "DOGE"],
+  markets: ["BTC", "ETH", "BNB", "HYPE", "SOL", "XRP", "DOGE"],
   maxLeverage: 20,
   minTopUpUsd: 12,
 };
@@ -27,44 +33,36 @@ export const C = { ...DEFAULTS, ...(window.FEEVERAGE_CONFIG || {}) };
 export const E = window.ethers;
 export const $ = (id) => document.getElementById(id);
 export const ZERO = "0x0000000000000000000000000000000000000000";
+export const NATIVE = C.native;
+// Local data is namespaced per chain, so nothing from an earlier deployment shows up.
+export const KEY = `feev.${C.chainId}.`;
 
-// ------------------------------------------------------------------ ABIs
-export const ROUTER_ABI = [
-  "function launchAndBuy((string name,string symbol,string logo,string description,(string twitter,string telegram,string discord,string website,string farcaster) socials,address creatorFeeRecipient,uint16 creatorTaxBps,bool buybackEnabled,bytes32 expectedEconomics,bytes32 salt) params,uint256 launchConfigId,address pairToken,uint256 quoteIn,uint256 minTokensOut,address recipient,address[] snipeTaxExemptions) payable returns (address token,address curve,uint256 tokensOut)",
+// ------------------------------------------------------------------ ABIs (flap.sh Portal)
+const NEW_TOKEN_V6 = "(string name,string symbol,string meta,uint8 dexThresh,bytes32 salt,uint8 migratorType,address quoteToken,uint256 quoteAmt,address beneficiary,bytes permitData,bytes32 extensionID,bytes extensionData,uint8 dexId,uint8 lpFeeProfile,uint16 buyTaxRate,uint16 sellTaxRate,uint64 taxDuration,uint64 antiFarmerDuration,uint16 mktBps,uint16 deflationBps,uint16 dividendBps,uint16 lpBps,uint256 minimumShareBalance,address dividendToken,address commissionReceiver,uint8 tokenVersion)";
+export const PORTAL_ABI = [
+  `function newTokenV6(${NEW_TOKEN_V6} params) payable returns (address)`,
+  "function swapExactInput((address inputToken,address outputToken,uint256 inputAmount,uint256 minOutputAmount,bytes permitData) params) payable returns (uint256)",
+  "function quoteExactInput((address inputToken,address outputToken,uint256 inputAmount) params) returns (uint256)",
+  "function getTokenV6(address token) view returns ((uint8 status,uint256 reserve,uint256 circulatingSupply,uint256 price,uint8 tokenVersion,uint256 r,uint256 h,uint256 k,uint256 dexSupplyThresh,address quoteTokenAddress,bool nativeToQuoteSwapEnabled,bytes32 extensionID,uint256 taxRate,address pool,uint256 progress))",
+  "event TokenCreated(uint256 ts,address creator,uint256 nonce,address token,string name,string symbol,string meta)",
+  "event TokenBought(uint256 ts,address token,address buyer,uint256 amount,uint256 eth,uint256 fee,uint256 postPrice)",
+  "event TokenSold(uint256 ts,address token,address seller,uint256 amount,uint256 eth,uint256 fee,uint256 postPrice)",
 ];
-export const FACTORY_ABI = [
-  "function launchToken((string name,string symbol,string logo,string description,(string twitter,string telegram,string discord,string website,string farcaster) socials,address creatorFeeRecipient,uint16 creatorTaxBps,bool buybackEnabled,bytes32 expectedEconomics,bytes32 salt) params,uint256 launchConfigId,address pairToken) payable returns (address token,address curve)",
-  "function launchFee() view returns (uint256)",
-  "function launchEnabled() view returns (bool)",
-  "function canLaunch(address) view returns (bool)",
-  "function maxCreatorTaxBps() view returns (uint256)",
-  "function previewLaunchEconomics(uint256 launchConfigId,address pairToken) view returns (bytes32)",
-  "function poolManager() view returns (address)",
-  "function memeHook() view returns (address)",
-  "function getLaunchedToken(address) view returns ((address token,address curve,address deployer,address creatorFeeRecipient,address pairToken,uint256 graduationThreshold,uint24 poolFee,int24 tickSpacing,uint16 creatorTaxBps,bool buybackEnabled,uint8 phase,uint256 sweptQuote,uint256 sweptTokens,uint256 sweptAt,bool exists))",
-  "event TokenLaunched(address indexed token,address indexed curve,address indexed deployer,address pairToken,uint256 launchConfigId,uint256 graduationThreshold)",
+export const HELPER_ABI = [
+  "function getTaxTokenInfo(address taxToken) view returns ((uint16 marketBps,uint16 deflationBps,uint16 lpBps,uint16 dividendBps,uint16 taxRate,uint256 burntTokenAmount,uint256 totalQuoteSentToDividend,uint256 totalQuoteAddedToLiquidity,uint256 totalTokenAddedToLiquidity,uint256 totalQuoteSentToMarketing,address marketingWallet,address quoteToken,uint256 minimumShareBalance))",
 ];
 export const TOKEN_ABI = [
   "function name() view returns (string)",
   "function symbol() view returns (string)",
-  "function logo() view returns (string)",
-  "function description() view returns (string)",
-  "function getTokenInfo() view returns (address tokenDeployer,string tokenLogo,string tokenDescription,(string twitter,string telegram,string discord,string website,string farcaster) tokenSocials)",
+  "function metaURI() view returns (string)",
   "function totalSupply() view returns (uint256)",
-  "function socials() view returns (string twitter,string telegram,string discord,string website,string farcaster)",
   "function balanceOf(address) view returns (uint256)",
   "function allowance(address,address) view returns (uint256)",
   "function approve(address,uint256) returns (bool)",
 ];
-export const CURVE_ABI = [
-  "function buy(uint256 quoteIn,uint256 minTokensOut,address recipient) payable returns (uint256)",
-  "function sell(uint256 tokensIn,uint256 minQuoteOut,address recipient) returns (uint256)",
-  "function sweepFees(uint256 minBuybackTokensOut)",
-  "function graduated() view returns (bool)",
-  "function realQuoteReserve() view returns (uint256)",
-  "function graduationThreshold() view returns (uint256)",
-  "function getReserves() view returns (uint256 quoteReserve, uint256 tokenReserve)",
-];
+// Portal enums
+export const STATUS = { INVALID: 0, TRADABLE: 1, DEX: 4, STAGED: 5 };
+export const TOKEN_TAXED_V3 = 6;
 
 // Strategy tag stored in the token description (same format the keeper parses).
 const TAG_RE = /feeverage:([A-Z0-9]{1,12}):([LS]):(\d{1,2})\b/;
@@ -74,7 +72,7 @@ export const parseStrategy = (d) => {
 };
 export const strategyLine = ({ market, isLong, leverage }) =>
   `Fees → ${leverage}x ${isLong ? "LONG" : "SHORT"} ${market} on Hyperliquid · feeverage:${market}:${isLong ? "L" : "S"}:${leverage}`;
-export const stripTag = (d) => String(d ?? "").replace(/\n*Fees → .*feeverage:[A-Z0-9]+:[LS]:\d+\s*$/s, "").trim();
+export const stripTag = (d) => String(d ?? "").replace(/\n*Fees → .*feeverage:[A-Z0-9]+:[LS]:\d+\s*$/s, "").replace(/\s*​\S*$/, "").trim();
 
 // ------------------------------------------------------------------ format
 export const fmt = (n, d = 2) => Number(n).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -86,7 +84,7 @@ export const compactUsd = (n) => {
 };
 export const signedUsd = (n) => (n > 0 ? "+" : "") + compactUsd(n);
 export const px = (n) => (n == null || !isFinite(n) ? "—" : n >= 1000 ? fmt(n, 0) : n >= 1 ? fmt(n, 2) : fmt(n, 5));
-export const ethPx = (p) => (p == null || !isFinite(p) ? "—" : (p >= 0.001 ? fmt(p, 6) : p.toExponential(3)) + " ETH");
+export const ethPx = (p) => (p == null || !isFinite(p) ? "—" : (p >= 0.001 ? fmt(p, 6) : p.toExponential(3)) + " " + (window.FEEVERAGE_CONFIG?.native || "BNB"));
 export const short = (a) => (a ? a.slice(0, 6) + "…" + a.slice(-4) : "");
 export const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 export const isAddr = (a) => /^0x[0-9a-fA-F]{40}$/.test(a ?? "");
@@ -99,14 +97,15 @@ export const tokenUrl = (addr) => `token.html?t=${addr}`;
 const X_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.9 2H22l-7.6 8.7L23.3 22h-7l-5.5-7.2L4.5 22H1.4l8.1-9.3L1 2h7.1l5 6.6L18.9 2Zm-1.2 18h1.7L7.1 3.9H5.3L17.7 20Z"/></svg>`;
 
 // ------------------------------------------------------------------ chain
-// RPC: the official endpoint first, then a public mirror, then the site's own proxy
+// RPC: the configured endpoint first, then public mirrors, then the site's own proxy
 // (/api/rpc), which works even when a visitor's network or browser blocks the others.
-const RPCS = [C.rpc, ...(C.rpcFallbacks ?? ["https://rpc.nodeflare.app/robinhood/public"]),
+const RPCS = [C.rpc, ...(C.rpcFallbacks ?? []),
   typeof location !== "undefined" && /^https?:/.test(location.protocol) ? location.origin + "/api/rpc" : null].filter(Boolean);
-const mkProvider = (url) => new E.JsonRpcProvider(url, C.chainId, { staticNetwork: true, batchMaxCount: 1 });
+const mkProvider = (url) => new E.JsonRpcProvider(url, C.chainId, { staticNetwork: true, batchMaxCount: 1, pollingInterval: 800 });
 export let provider = E ? mkProvider(RPCS[0]) : null;
-export let factory = provider ? new E.Contract(C.factory, FACTORY_ABI, provider) : null;
-export const chain = { ok: false, launchFee: null, launchOpen: null, maxTaxBps: 1000n, canLaunchMe: null };
+export let portal = provider ? new E.Contract(C.portal, PORTAL_ABI, provider) : null;
+export let helper = provider ? new E.Contract(C.taxHelper, HELPER_ABI, provider) : null;
+export const chain = { ok: false, launchFee: 0n, launchOpen: true, canLaunchMe: null };
 let rpcPick = null;
 export function pickRpc() {
   if (!E) return Promise.resolve(null);
@@ -120,7 +119,8 @@ export function pickRpc() {
         ]);
         if (Number(id) !== Number(C.chainId)) continue;
         provider = p;
-        factory = new E.Contract(C.factory, FACTORY_ABI, p);
+        portal = new E.Contract(C.portal, PORTAL_ABI, p);
+        helper = new E.Contract(C.taxHelper, HELPER_ABI, p);
         return url;
       } catch {}
     }
@@ -132,18 +132,9 @@ export function pickRpc() {
 
 export async function readChain() {
   await pickRpc();
-  if (!factory) return chain;
   try {
-    const [fee, open, tax] = await Promise.allSettled([factory.launchFee(), factory.launchEnabled(), factory.maxCreatorTaxBps()]);
-    if (fee.status !== "fulfilled") throw fee.reason;
-    Object.assign(chain, {
-      ok: true,
-      launchFee: fee.value,
-      launchOpen: open.status === "fulfilled" ? open.value : true,
-      maxTaxBps: tax.status === "fulfilled" ? tax.value : 1000n,
-    });
-    const me = wallet.state.address;
-    chain.canLaunchMe = me ? await factory.canLaunch(me).catch(() => null) : null;
+    const code = await provider.getCode(C.portal);
+    chain.ok = code && code !== "0x";
   } catch {
     chain.ok = false;
   }
@@ -179,7 +170,7 @@ async function fromHyperliquid() {
   hlOk = true;
 }
 
-const GECKO = { BTC: "bitcoin", ETH: "ethereum", HYPE: "hyperliquid", SOL: "solana", XRP: "ripple", DOGE: "dogecoin" };
+const GECKO = { BTC: "bitcoin", ETH: "ethereum", BNB: "binancecoin", HYPE: "hyperliquid", SOL: "solana", XRP: "ripple", DOGE: "dogecoin" };
 async function fromCoinGecko() {
   const ids = C.markets.map((m) => GECKO[m]).filter(Boolean).join(",");
   const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`);
@@ -288,7 +279,7 @@ setInterval(() => {
 // second against the live price of the token's own market and side.
 export function live(tok) {
   const m = market[tok.market]?.px;
-  const ethPx = market.ETH?.px ?? 0;
+  const ethPx = market[NATIVE]?.px ?? 0;
   const r = { ...tok };
   if (tok.szi && tok.entryPx && m) {
     r.markPx = m;
@@ -322,85 +313,31 @@ async function fromKeeper() {
   return r.json();
 }
 
-const FEES_SWEPT = E ? E.id("FeesSwept(uint256,uint256,uint256)") : null;
-const CURVE_BUY = E ? E.id("CurveBuy(address,address,uint256,uint256,uint256,uint256)") : null;
-const CURVE_SELL = E ? E.id("CurveSell(address,address,uint256,uint256,uint256,uint256)") : null;
-const POOL_REGISTERED = E ? E.id("PoolRegistered(bytes32,address,address,address)") : null;
-
-// getLogs over any range: starts with a wide window and narrows it when the RPC refuses.
-let span = 2_000_000;
-// Logs from the Blockscout explorer (etherscan-style API). Returns null if it can't answer.
-async function explorerLogs(address, topic0, fromBlock = 0) {
-  const bases = [C.explorer + "/api", typeof location !== "undefined" && /^https?:/.test(location.protocol) ? location.origin + "/api/explorer" : null].filter(Boolean);
-  for (const base of bases) {
+// Token metadata lives on IPFS (flap.sh pins it): description, image, socials.
+const metaCache = new Map();
+export async function fetchMeta(cid) {
+  if (!cid) return null;
+  if (metaCache.has(cid)) return metaCache.get(cid);
+  const p = (async () => {
     try {
-      const out = [];
-      let from = fromBlock;
-      for (let page = 0; page < 50; page++) {
-        const q = new URLSearchParams({ module: "logs", action: "getLogs", address, topic0, fromBlock: String(from), toBlock: "latest" });
-        const r = await fetch(`${base}?${q}`, { signal: AbortSignal.timeout(10000) });
-        const j = await r.json();
-        const rows = Array.isArray(j?.result) ? j.result : null;
-        if (!rows) { if (String(j?.message || "").toLowerCase().includes("no ")) break; throw new Error("bad explorer reply"); }
-        for (const x of rows) out.push({ address: x.address, topics: x.topics.filter(Boolean), data: x.data, blockNumber: Number(x.blockNumber), transactionHash: x.transactionHash });
-        if (rows.length < 1000) break;
-        from = Number(rows[rows.length - 1].blockNumber) + 1;
-      }
-      const seen = new Set();
-      return out.filter((l) => { const k = l.transactionHash + l.topics.join(); if (seen.has(k)) return false; seen.add(k); return true; });
-    } catch {}
-  }
-  return null;
-}
-
-export async function scanLogs(filter, fromBlock, toBlock) {
-  const out = [];
-  let from = Math.max(0, fromBlock);
-  while (from <= toBlock) {
-    const to = Math.min(toBlock, from + span - 1);
-    try {
-      out.push(...(await provider.getLogs({ ...filter, fromBlock: from, toBlock: to })));
-      from = to + 1;
-      if (span < 2_000_000) span = Math.min(2_000_000, span * 2);
-    } catch (e) {
-      if (span <= 2_000) throw e;
-      span = Math.max(2_000, Math.floor(span / 5));
+      const r = await fetch(C.ipfs + cid, { signal: AbortSignal.timeout(12000) });
+      if (!r.ok) return null;
+      const j = await r.json();
+      return {
+        description: j.description ?? "",
+        logo: j.image ? (/^https?:/.test(j.image) ? j.image : C.ipfs + String(j.image).replace(/^ipfs:\/\//, "")) : "",
+        socials: { twitter: j.twitter ?? "", telegram: j.telegram ?? "", website: j.website ?? "" },
+        creator: j.creator ?? null,
+      };
+    } catch {
+      return null;
     }
-  }
-  return out;
-}
-const abi = () => E.AbiCoder.defaultAbiCoder();
-const firstBlock = (x) => Number(x.block ?? x.launchedBlock ?? C.startBlock ?? 0) || Number(C.startBlock) || 0;
-
-async function addCurveFees(list) {
-  const withCurve = list.filter((x) => x.curve);
-  if (!withCurve.length) return;
-  const latest = await provider.getBlockNumber();
-  const byCurve = new Map(withCurve.map((x) => [x.curve.toLowerCase(), x]));
-  withCurve.forEach((x) => (x.feesEth = 0));
-  const logs = await scanLogs({ address: [...byCurve.keys()], topics: [FEES_SWEPT] }, Math.min(...withCurve.map(firstBlock)), latest);
-  for (const l of logs) {
-    const [, , creator] = abi().decode(["uint256", "uint256", "uint256"], l.data);
-    const x = byCurve.get(l.address.toLowerCase());
-    if (x) x.feesEth += Number(E.formatEther(creator));
-  }
+  })();
+  metaCache.set(cid, p);
+  return p;
 }
 
-// Pons V2 tokens expose logo, description and socials through getTokenInfo().
-// The single getters are tried as a fallback for other token versions.
-async function tokenMeta(tk) {
-  try {
-    const r = await tk.getTokenInfo();
-    const so = r.tokenSocials ?? r[3];
-    return { deployer: r.tokenDeployer ?? r[0], logo: r.tokenLogo ?? r[1], description: r.tokenDescription ?? r[2],
-      socials: { twitter: so?.twitter ?? so?.[0] ?? "", telegram: so?.telegram ?? so?.[1] ?? "", website: so?.website ?? so?.[3] ?? "" } };
-  } catch {
-    const [logo, description, so] = await Promise.all([tk.logo().catch(() => ""), tk.description().catch(() => ""), tk.socials().catch(() => null)]);
-    return { logo, description, socials: so ? { twitter: so.twitter, telegram: so.telegram, website: so.website } : {} };
-  }
-}
-
-// Runs fn over items with at most n in flight, so a long launch list doesn't flood the RPC.
+// Runs fn over items with at most n in flight, so a long list doesn't flood the RPC.
 async function pool(items, n, fn) {
   let i = 0;
   await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
@@ -408,7 +345,7 @@ async function pool(items, n, fn) {
   }));
 }
 
-// The site's own server does the discovery (fast, and works on networks that filter the chain).
+// The site's own server finds this site's launches (flap.sh launches thousands of tokens a day).
 async function fromServer() {
   if (typeof location === "undefined" || !/^https?:/.test(location.protocol) || !isAddr(C.feeRecipient)) return null;
   try {
@@ -416,101 +353,57 @@ async function fromServer() {
     const r = await fetch(`api/tokens?${q}`, { signal: AbortSignal.timeout(55000) });
     if (!r.ok) return null;
     const j = await r.json();
-    if (!Array.isArray(j.tokens)) return null;
-    const out = [];
-    for (const x of j.tokens) {
-      const st = parseStrategy(x.description || "");
-      if (st) out.push({ ...x, socials: x.socials ?? {}, ...st, feesEth: null, pendingEth: null });
-    }
-    await addCurveFees(out).catch(() => {});
-    return out;
+    return Array.isArray(j.tokens) ? j.tokens : null;
   } catch {
     return null;
   }
 }
 
+// Checks one token: fees must go to our operator and its description must carry the strategy tag.
+async function inspect(x) {
+  const info = await helper.getTaxTokenInfo(x.token);
+  if (!C.feeRecipient || info.marketingWallet.toLowerCase() !== C.feeRecipient.toLowerCase()) return null;
+  const tk = new E.Contract(x.token, TOKEN_ABI, provider);
+  const [name, symbol, cid] = await Promise.all([x.name ?? tk.name(), x.symbol ?? tk.symbol(), x.meta ?? tk.metaURI()]);
+  const meta = await fetchMeta(cid);
+  const st = parseStrategy(meta?.description ?? x.description ?? "");
+  if (!st) return null;
+  return { token: x.token, deployer: x.deployer ?? meta?.creator ?? null, name, symbol, meta: cid, description: meta?.description ?? x.description ?? "",
+    logo: meta?.logo ?? x.logo ?? "", socials: meta?.socials ?? {}, ...st, block: x.block ?? 0, feesEth: null, pendingEth: null };
+}
+
 async function fromChain() {
-  const srv = await fromServer();
-  if (srv) return srv;
-  const latest = await provider.getBlockNumber();
-  const start = Number(C.startBlock) || Math.max(0, latest - 5_000_000);
   const found = new Map();
-  const topic = factory.interface.getEvent("TokenLaunched").topicHash;
-  // The explorer's indexed log search answers in one request; scanning the RPC block by
-  // block is the fallback and can take a while on a long chain.
-  const logs = (await explorerLogs(C.factory, topic, Number(C.startBlock) || 0)) ?? (await scanLogs({ address: C.factory, topics: [topic] }, start, latest));
-  for (const l of logs) {
-    const ev = factory.interface.parseLog(l);
-    found.set(ev.args.token.toLowerCase(), { token: ev.args.token, curve: ev.args.curve, deployer: ev.args.deployer, block: l.blockNumber });
-  }
-  for (const m of store.get("feeverage.launches", [])) if (!found.has(m.token.toLowerCase())) found.set(m.token.toLowerCase(), m);
+  for (const x of (await fromServer()) ?? []) found.set(x.token.toLowerCase(), x);
+  // Launches made from this browser show up immediately, before any indexer has seen them.
+  for (const m of store.get(KEY + "launches", [])) if (!found.has(m.token.toLowerCase())) found.set(m.token.toLowerCase(), m);
   const out = [];
-  // The factory serves every launchpad on the chain, so most launches are someone else's.
-  // Tokens already found not to be ours are remembered and skipped on the next load.
-  const notOurs = new Set(store.get("feev.notours", []));
-  const skip = (a) => { notOurs.add(a.toLowerCase()); };
-  const todo = [...found.values()].filter((x) => !notOurs.has(x.token.toLowerCase()));
-  await pool(todo, 6, async (x) => {
-    const info = await factory.getLaunchedToken(x.token).catch(() => null);
-    // Only this site's launches: fees go to our operator and the description carries the strategy tag.
-    if (info && C.feeRecipient && info.creatorFeeRecipient.toLowerCase() !== C.feeRecipient.toLowerCase()) return skip(x.token);
-    const tk = new E.Contract(x.token, TOKEN_ABI, provider);
-    const [name, symbol, meta] = await Promise.all([tk.name(), tk.symbol(), tokenMeta(tk)]).catch(() => []);
-    const description = meta?.description ?? "";
-    const st = parseStrategy(description || "");
-    if (!st) { if (meta) skip(x.token); return; }
-    out.push({ token: x.token, curve: info?.curve ?? x.curve, deployer: info?.deployer ?? x.deployer, name, symbol, description, logo: meta?.logo ?? "", socials: meta?.socials ?? {}, ...st, block: x.block ?? 0, feesEth: null, pendingEth: null });
+  await pool([...found.values()], 6, async (x) => {
+    const st = parseStrategy(x.description);
+    const t2 = st ? { ...x, ...st } : await inspect(x);
+    if (t2 && t2.market) out.push({ feesEth: null, pendingEth: null, socials: {}, ...t2 });
   });
-  store.set("feev.notours", [...notOurs].slice(-5000));
-  out.sort((a, b) => b.block - a.block);
-  await addCurveFees(out);
+  out.sort((a, b) => (b.block || 0) - (a.block || 0));
   return out;
 }
 
-// ------------------------------------------------------------------ token prices (on-chain, live)
-// On the curve: spot = quoteReserve / tokenReserve. After graduation: read the Uniswap v4
-// pool's sqrtPriceX96 straight from the PoolManager (native ETH is always currency0).
-let v4 = null;
-async function v4Info() {
-  if (v4) return v4;
-  const [pm, hook] = await Promise.all([factory.poolManager(), factory.memeHook()]);
-  v4 = { pm: new E.Contract(pm, ["function extsload(bytes32 slot) view returns (bytes32)"], provider), hook };
-  return v4;
-}
-async function findPoolId(x) {
-  if (x.poolId) return x.poolId;
-  const { hook } = await v4Info();
-  const latest = await provider.getBlockNumber();
-  const logs = await scanLogs({ address: hook, topics: [POOL_REGISTERED] }, firstBlock(x), latest);
-  for (const l of logs) {
-    const [memecoin] = abi().decode(["address", "address", "address"], l.data);
-    if (memecoin.toLowerCase() === x.token.toLowerCase()) return (x.poolId = l.topics[1]);
-  }
-  return null;
-}
-async function poolPriceEth(x) {
-  const id = await findPoolId(x);
-  if (!id) return null;
-  const { pm } = await v4Info();
-  const slot = E.keccak256(E.concat([id, E.zeroPadValue("0x06", 32)]));
-  const word = BigInt(await pm.extsload(slot));
-  const sqrtP = word & ((1n << 160n) - 1n);
-  if (sqrtP === 0n) return null;
-  const tokensPerEth = Number((sqrtP * sqrtP * 10n ** 18n) >> 192n) / 1e18;
-  return tokensPerEth > 0 ? 1 / tokensPerEth : null;
+// ------------------------------------------------------------------ token state (on-chain, live)
+// Price, progress and status straight from the flap.sh Portal; creator fees from the
+// Tax Token Helper (BNB already sent to the operator for this token).
+function applyState(x, s) {
+  x.status = Number(s.status);
+  x.graduated = x.status === STATUS.DEX;
+  x.spotEth = Number(E.formatEther(s.price));
+  const p = Number(s.progress);
+  x.progress = x.graduated ? 1 : p > 1e6 ? p / 1e18 : p > 1 ? p / 10000 : p;
+  x.reserveEth = Number(E.formatEther(s.reserve));
+  x.taxBps = Number(s.taxRate);
+  if (x.supply) x.mcapEth = x.spotEth * x.supply;
 }
 export async function refreshTokenPrices(list) {
   if (!chain.ok) return;
-  await Promise.all(list.filter((x) => x.curve || x.graduated).map(async (x) => {
-    try {
-      if (!x.graduated && x.curve) {
-        const res = await new E.Contract(x.curve, CURVE_ABI, provider).getReserves();
-        x.spotEth = res.tokenReserve > 0n ? Number(E.formatEther(res.quoteReserve)) / Number(E.formatEther(res.tokenReserve)) : null;
-      } else {
-        x.spotEth = await poolPriceEth(x);
-      }
-      if (x.spotEth != null && x.supply) x.mcapEth = x.spotEth * x.supply;
-    } catch {}
+  await Promise.all(list.filter((x) => x.token).map(async (x) => {
+    try { applyState(x, await portal.getTokenV6(x.token)); } catch {}
   }));
 }
 
@@ -518,27 +411,17 @@ async function enrichChain(list) {
   if (!chain.ok) return;
   await Promise.all(list.filter((x) => x.token).map(async (x) => {
     const tk = new E.Contract(x.token, TOKEN_ABI, provider);
-    const jobs = [
-      x.logo == null || x.description == null || x.socials == null
-        ? tokenMeta(tk).then((m) => { x.logo ??= m.logo; x.description ??= m.description; x.socials ??= m.socials; }).catch(() => {})
-        : null,
+    await Promise.all([
       x.supply == null ? tk.totalSupply().then((v) => (x.supply = Number(E.formatEther(v)))).catch(() => {}) : null,
-    ];
-    if (x.curve) {
-      const c = new E.Contract(x.curve, CURVE_ABI, provider);
-      jobs.push((async () => {
-        try {
-          const [g, real, thr, res] = await Promise.all([c.graduated(), c.realQuoteReserve(), c.graduationThreshold(), c.getReserves()]);
-          x.graduated = g;
-          x.progress = g ? 1 : Number(real) / Number(thr || 1n);
-          x.reserveEth = Number(E.formatEther(real));
-          x.thresholdEth = Number(E.formatEther(thr));
-          x.spotEth = g ? await poolPriceEth(x).catch(() => null)
-            : res.tokenReserve > 0n ? Number(E.formatEther(res.quoteReserve)) / Number(E.formatEther(res.tokenReserve)) : null;
-        } catch {}
-      })());
-    }
-    await Promise.all(jobs.filter(Boolean));
+      portal.getTokenV6(x.token).then((s) => applyState(x, s)).catch(() => {}),
+      helper.getTaxTokenInfo(x.token).then((i) => {
+        const sent = Number(E.formatEther(i.totalQuoteSentToMarketing));
+        if (x.feesEth == null || sent > x.feesEth) x.feesEth = sent;
+        // Without a keeper, everything not yet bridged counts toward the next top-up.
+        if (x.pendingEth == null) x.pendingEth = Math.max(0, sent - (x.bridgedEth ?? 0));
+      }).catch(() => {}),
+      x.logo == null && x.meta ? fetchMeta(x.meta).then((m) => { if (m) { x.logo = m.logo; x.socials ??= m.socials; x.description ??= m.description; } }) : null,
+    ].filter(Boolean));
     if (x.spotEth != null && x.supply) x.mcapEth = x.spotEth * x.supply;
   }));
 }
@@ -564,16 +447,17 @@ async function enrichPositions(list) {
   }));
 }
 
-// Returns { tokens, totals(), source }. Everything is real data; with no launches it is empty.
+// Returns { tokens, source }. Everything is real data; with no launches it is empty.
 export async function loadTokens() {
   await pickRpc();
+  if (!chain.ok) await readChain();
   let tokens = [], source;
   try {
     if (C.keeperApi) {
       const s = await fromKeeper();
       tokens = s.tokens.slice().reverse();
       source = t("src.keeper") + (s.dryRun ? " (dry run)" : "");
-    } else if (chain.ok && isAddr(C.feeRecipient)) {
+    } else if (isAddr(C.feeRecipient)) {
       tokens = await fromChain();
       source = t("src.chain");
     } else throw new Error("no source");
@@ -582,8 +466,12 @@ export async function loadTokens() {
     source = isAddr(C.feeRecipient) || C.keeperApi ? t("src.connecting") : t("src.none");
   }
   await Promise.all([enrichChain(tokens), enrichPositions(tokens)]);
+  if (tokens.length) store.set(KEY + "tokens", tokens.slice(0, 200));
   return { tokens, source };
 }
+
+// Last list seen by this browser: drawn instantly while fresh data loads.
+export const cachedTokens = () => store.get(KEY + "tokens", []);
 
 export function totals(tokens) {
   const L = tokens.map(live);
@@ -597,52 +485,37 @@ export function totals(tokens) {
 }
 
 // ------------------------------------------------------------------ a wallet's holdings
-// Balance from the token contract; cost basis from the wallet's own CurveBuy / CurveSell
-// events on that token's curve. Values are marked to the live on-chain token price.
+// Balance from the token contract. Cost basis from the trades this wallet made on this site
+// (launch buy, buys and sells), kept in the browser. Values are marked to the live price.
+export function recordTrade(user, x) {
+  const k = KEY + "trades." + user.toLowerCase();
+  const all = store.get(k, []);
+  all.unshift({ ...x, at: Date.now() });
+  store.set(k, all.slice(0, 500));
+}
 export async function loadHoldings(user, tokens) {
   if (!chain.ok || !isAddr(user)) return [];
-  const latest = await provider.getBlockNumber();
-  const me = E.zeroPadValue(user.toLowerCase(), 32);
-  const cacheKey = `feev.trades.${user.toLowerCase()}`;
-  const cache = store.get(cacheKey, {});
+  const trades = store.get(KEY + "trades." + user.toLowerCase(), []);
   const out = [];
   await Promise.all(tokens.map(async (x) => {
     const tk = new E.Contract(x.token, TOKEN_ABI, provider);
     const balance = Number(E.formatEther(await tk.balanceOf(user).catch(() => 0n)));
-    const c = cache[x.token.toLowerCase()] ?? { from: firstBlock(x), buys: [], sells: [] };
-    if (x.curve && c.from <= latest) {
-      try {
-        const [buys, sells] = await Promise.all([
-          scanLogs({ address: x.curve, topics: [CURVE_BUY, null, me] }, c.from, latest),
-          scanLogs({ address: x.curve, topics: [CURVE_SELL, me] }, c.from, latest),
-        ]);
-        for (const l of buys) {
-          const [quoteIn, tokensOut] = abi().decode(["uint256", "uint256", "uint256", "uint256"], l.data);
-          c.buys.push({ eth: Number(E.formatEther(quoteIn)), tokens: Number(E.formatEther(tokensOut)), tx: l.transactionHash, block: l.blockNumber });
-        }
-        for (const l of sells) {
-          const [tokensIn, quoteOut] = abi().decode(["uint256", "uint256", "uint256", "uint256"], l.data);
-          c.sells.push({ eth: Number(E.formatEther(quoteOut)), tokens: Number(E.formatEther(tokensIn)), tx: l.transactionHash, block: l.blockNumber });
-        }
-        c.from = latest + 1;
-        cache[x.token.toLowerCase()] = c;
-      } catch {}
-    }
-    if (balance <= 0 && !c.buys.length && !c.sells.length) return;
-    const spent = c.buys.reduce((a, b) => a + b.eth, 0);
-    const bought = c.buys.reduce((a, b) => a + b.tokens, 0);
-    const received = c.sells.reduce((a, b) => a + b.eth, 0);
-    const sold = c.sells.reduce((a, b) => a + b.tokens, 0);
+    const mine = trades.filter((r) => r.token?.toLowerCase() === x.token.toLowerCase());
+    const buys = mine.filter((r) => r.side === "buy"), sells = mine.filter((r) => r.side === "sell");
+    if (balance <= 0 && !mine.length) return;
+    const spent = buys.reduce((a, b) => a + b.eth, 0);
+    const bought = buys.reduce((a, b) => a + b.tokens, 0);
+    const received = sells.reduce((a, b) => a + b.eth, 0);
+    const sold = sells.reduce((a, b) => a + b.tokens, 0);
     out.push({ ...x, balance, spentEth: spent, boughtTokens: bought, receivedEth: received, soldTokens: sold,
-      avgEth: bought > 0 ? spent / bought : null, trades: [...c.buys.map((b) => ({ ...b, side: "buy" })), ...c.sells.map((b) => ({ ...b, side: "sell" }))] });
+      avgEth: bought > 0 ? spent / bought : null, trades: mine.map((r) => ({ ...r })) });
   }));
-  store.set(cacheKey, cache);
   return out;
 }
 
-// Live marks for one holding (ETH and USD).
+// Live marks for one holding (native coin and USD).
 export function holdingLive(h) {
-  const ethPx = market.ETH?.px ?? 0;
+  const ethPx = market[NATIVE]?.px ?? 0;
   const valueEth = h.spotEth != null ? h.balance * h.spotEth : null;
   const costLeft = h.avgEth != null ? h.balance * h.avgEth : null;
   const pnlEth = valueEth != null && h.spentEth > 0 ? valueEth + h.receivedEth - h.spentEth : null;
@@ -861,7 +734,17 @@ function wireWallet() {
 }
 
 // ------------------------------------------------------------------ boot
+// Drop data left in the browser by the earlier Robinhood Chain version of the site.
+function forgetOldChain() {
+  try {
+    for (const k of Object.keys(localStorage)) {
+      if (k === "feeverage.launches" || k === "feev.notours" || k.startsWith("feev.trades.") || k.startsWith("feev.4663.")) localStorage.removeItem(k);
+    }
+  } catch {}
+}
+
 export function initShell() {
+  forgetOldChain();
   pickRpc();
   applyI18n();
   wireMenu();

@@ -1,5 +1,5 @@
-// The position a token's fees fund is written into the token's own on-chain
-// description at launch, so it is public, permanent and readable by anyone:
+// The position a token's fees fund is written into the token's description at
+// launch (pinned on IPFS by flap.sh), so it is public, permanent and readable by anyone:
 //
 //   "...\n\nFees → 5x LONG BTC on Hyperliquid · feeverage:BTC:L:5"
 //

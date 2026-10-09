@@ -1,9 +1,9 @@
-// Tiny JSON ledger. All creator fees land in one escrow balance (the operator's),
-// so this file is what says how much of that ETH belongs to which token.
+// Tiny JSON ledger. Every token's tax lands in one wallet (the operator's), so this
+// file is what says how much of that BNB belongs to which token.
 // Back it up together with HL_MNEMONIC.
 import { readFileSync, writeFileSync, renameSync, existsSync } from "node:fs";
 
-const FILE = new URL("../state.json", import.meta.url);
+const FILE = new URL(`../${process.env.STATE_FILE || "state.bsc.json"}`, import.meta.url);
 
 export function loadState() {
   const s = existsSync(FILE) ? JSON.parse(readFileSync(FILE, "utf8")) : {};
@@ -13,7 +13,7 @@ export function loadState() {
 }
 
 export function saveState(state) {
-  const tmp = new URL("../state.json.tmp", import.meta.url);
+  const tmp = new URL(FILE.href + ".tmp");
   writeFileSync(tmp, JSON.stringify(state, null, 2));
   renameSync(tmp, FILE);
 }
@@ -32,7 +32,7 @@ export function tokenState(state, token) {
   return state.tokens[key];
 }
 
-/** ETH credited to the token that has not been bridged yet. */
+/** BNB credited to the token that has not been bridged yet. */
 export function pendingWei(ts) {
   return BigInt(ts.creditedWei) - BigInt(ts.bridgedWei) - BigInt(ts.failedWei);
 }

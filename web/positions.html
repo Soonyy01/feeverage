@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Positions · Feeverage</title>
 <script>try{var t=localStorage.getItem("feev.theme");if(t)document.documentElement.dataset.theme=t;var l=localStorage.getItem("feev.lang");if(l!=="en"&&l!=="zh")l=(navigator.language||"").toLowerCase().indexOf("zh")===0?"zh":"en";document.documentElement.lang=l;}catch(e){}</script>
-<meta name="description" content="Launch a token on Robinhood Chain. Its trading fees fund a leveraged Hyperliquid position.">
+<meta name="description" content="Launch a token on BNB Chain. Its trading fees fund a leveraged Hyperliquid position.">
 <meta name="theme-color" content="#f4f2e8">
 <meta property="og:title" content="Feeverage — your token's fees. Leveraged.">
-<meta property="og:description" content="Launch a token on Robinhood Chain. Its trading fees fund a leveraged Hyperliquid position.">
+<meta property="og:description" content="Launch a token on BNB Chain. Its trading fees fund a leveraged Hyperliquid position.">
 <meta property="og:image" content="assets/og-image.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/png" href="assets/logo-96.png">
@@ -53,7 +53,7 @@
 
       <div id="mine" hidden>
         <div class="stats" id="pstats" role="list" style="grid-template-columns:repeat(4,1fr)">
-          <div class="stat hl" role="listitem"><span class="label" data-i18n="p.eth">ETH balance</span><span class="v" id="ethBal">—</span><span class="s" id="ethBalUsd">—</span></div>
+          <div class="stat hl" role="listitem"><span class="label" data-i18n="p.eth">BNB balance</span><span class="v" id="ethBal">—</span><span class="s" id="ethBalUsd">—</span></div>
           <div class="stat" role="listitem"><span class="label" data-i18n="p.value">Holdings value</span><span class="v" id="hVal">—</span><span class="s" data-i18n="p.value.s">marked to live price</span></div>
           <div class="stat" role="listitem"><span class="label" data-i18n="p.cost">Total spent</span><span class="v" id="hCost">—</span><span class="s" data-i18n="p.cost.s">on Feeverage curves</span></div>
           <div class="stat" role="listitem"><span class="label" data-i18n="p.pnl">Total PnL</span><span class="v" id="hPnl">—</span><span class="s" id="hPnlPct" data-i18n="p.pnl.s">realized + unrealized</span></div>
@@ -62,7 +62,6 @@
 
         <div class="sec-head" style="margin-top:48px"><div><h2 class="echo-h" style="font-size:clamp(28px,4vw,42px)" data-i18n="p.holdings">Holdings</h2></div></div>
         <div id="holdings"></div>
-        <p class="note" style="margin-top:12px" data-i18n="p.note"></p>
 
         <div class="sec-head" style="margin-top:48px"><div><h2 class="echo-h" style="font-size:clamp(28px,4vw,42px)" data-i18n="p.history">Your trades</h2></div></div>
         <div id="history"></div>
@@ -74,7 +73,7 @@
 <footer class="foot">
   <div class="wrap">
     <img src="assets/logo-96.png" alt="" width="36" height="36">
-    <span class="label">Robinhood × Hyperliquid</span>
+    <span class="label">BNB Chain × Hyperliquid</span>
   </div>
 </footer>
 

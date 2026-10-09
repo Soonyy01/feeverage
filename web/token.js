@@ -1,5 +1,5 @@
 import {
-  $, C, CURVE_ABI, E, TOKEN_ABI, chain, compactUsd, errMsg, esc, ethPx, fmt, holdingLive, initShell, isAddr, live, loadHoldings, loadTokens,
+  $, C, E, NATIVE, cachedTokens, PORTAL_ABI, TOKEN_ABI, ZERO, chain, recordTrade, compactUsd, errMsg, esc, ethPx, fmt, holdingLive, initShell, isAddr, live, loadHoldings, loadTokens,
   onMarkets, pnlText, provider, px, readChain, refreshTokenPrices, short, stripTag, t, tokenLogo, usd, wallet,
 } from "./core.js";
 
@@ -25,21 +25,21 @@ function render() {
     cell("t.notional", "—", "", "notional"),
     cell("t.margin", "—", "", "margin"),
     cell("t.funded", usd(x.bridgedUsd ?? 0), "", "funded"),
-    cell("t.fees", x.feesEth == null ? "—" : fmt(x.feesEth, 4) + " ETH", "", "fees"),
+    cell("t.fees", x.feesEth == null ? "—" : fmt(x.feesEth, 4) + " " + NATIVE, "", "fees"),
     cell("t.mcap", "—", "", "mcap"),
   ].join("");
   const prog = Math.max(0, Math.min(1, x.progress ?? 0));
   $("curveBar").style.width = prog * 100 + "%";
   $("curvePct").textContent = x.graduated ? "100%" : fmt(prog * 100, 0) + "%";
   $("curveText").textContent = x.graduated ? t("t.curve.grad")
-    : x.reserveEth != null ? `${fmt(x.reserveEth, 4)} / ${fmt(x.thresholdEth, 4)} ETH ${t("t.curve.to")}` : "";
+    : x.reserveEth != null ? `${fmt(x.reserveEth, 4)} ${NATIVE} · ${fmt(prog * 100, 0)}% ${t("t.curve.to")}` : "";
   $("desc").textContent = stripTag(x.description) || t("t.nodesc");
   $("links").innerHTML = `
     <dt>${t("t.contract")}</dt><dd><a href="${C.explorer}/token/${x.token}" target="_blank" rel="noopener">${short(x.token)} ↗</a></dd>
     <dt>${t("t.creator")}</dt><dd>${x.deployer ? `<a href="${C.explorer}/address/${x.deployer}" target="_blank" rel="noopener">${short(x.deployer)} ↗</a>` : "—"}</dd>
     <dt>${t("t.hl")}</dt><dd>${isAddr(x.hlAccount) ? `<a href="https://app.hyperliquid.xyz/explorer/address/${x.hlAccount}" target="_blank" rel="noopener">${short(x.hlAccount)} ↗</a>` : t("t.hl.wait")}</dd>`;
   const me = wallet.state.address?.toLowerCase();
-  $("push").hidden = !(me && x.deployer && me === x.deployer.toLowerCase() && !x.graduated);
+  $("push").hidden = true;
   $("trade").hidden = Boolean(x.graduated);
   $("gradNote").hidden = !x.graduated;
   tickLive(true);
@@ -118,24 +118,21 @@ document.querySelectorAll("#trade .seg button").forEach((b) => b.addEventListene
   $("tGo").textContent = side === "buy" ? t("t.buy") : t("t.sell");
   requote();
 }));
+// Quotes and trades go through the flap.sh Portal (bonding curve phase).
+const swapArgs = (amt) => side === "buy"
+  ? { inputToken: ZERO, outputToken: raw.token, inputAmount: amt }
+  : { inputToken: raw.token, outputToken: ZERO, inputAmount: amt };
 function requote() {
   clearTimeout(timer);
   timer = setTimeout(async () => {
     const v = Number($("tAmt").value);
     if (!raw || !(v > 0) || !chain.ok) return ($("tQuote").textContent = t("t.quote"));
-    const from = wallet.state.address ?? C.feeRecipient;
     try {
-      const c = new E.Contract(raw.curve, CURVE_ABI, provider);
-      const amt = E.parseEther(String(v));
-      if (side === "buy") {
-        const out = await c.buy.staticCall(amt, 0n, from, { value: amt, from });
-        $("tQuote").textContent = `≈ ${fmt(Number(E.formatEther(out)), 2)} $${raw.symbol}`;
-      } else {
-        const out = await c.sell.staticCall(amt, 0n, from, { from });
-        $("tQuote").textContent = `≈ ${fmt(Number(E.formatEther(out)), 6)} ETH`;
-      }
+      const p = new E.Contract(C.portal, PORTAL_ABI, provider);
+      const out = await p.quoteExactInput.staticCall(swapArgs(E.parseEther(String(v))));
+      $("tQuote").textContent = side === "buy" ? `≈ ${fmt(Number(E.formatEther(out)), 2)} $${raw.symbol}` : `≈ ${fmt(Number(E.formatEther(out)), 6)} ${NATIVE}`;
     } catch {
-      $("tQuote").textContent = side === "sell" ? t("t.approve") : t("t.noquote");
+      $("tQuote").textContent = t("t.noquote");
     }
   }, 300);
 }
@@ -148,34 +145,25 @@ $("tGo").addEventListener("click", async () => {
     if (!(v > 0)) throw new Error(t("t.quote"));
     const s = await wallet.signer();
     const me = await s.getAddress();
-    const c = new E.Contract(raw.curve, CURVE_ABI, s);
+    const p = new E.Contract(C.portal, PORTAL_ABI, s);
     const amt = E.parseEther(String(v));
     st.className = "status"; st.textContent = t("t.confirm");
-    if (side === "buy") {
-      const out = await c.buy.staticCall(amt, 0n, me, { value: amt });
-      await (await c.buy(amt, (out * 97n) / 100n, me, { value: amt })).wait();
-    } else {
+    if (side === "sell") {
       const tok = new E.Contract(raw.token, TOKEN_ABI, s);
-      if ((await tok.allowance(me, raw.curve)) < amt) {
+      if ((await tok.allowance(me, C.portal)) < amt) {
         st.textContent = t("t.approving");
-        await (await tok.approve(raw.curve, E.MaxUint256)).wait();
+        await (await tok.approve(C.portal, E.MaxUint256)).wait();
       }
-      const out = await c.sell.staticCall(amt, 0n, me);
-      await (await c.sell(amt, (out * 97n) / 100n, me)).wait();
     }
+    const value = side === "buy" ? amt : 0n;
+    const out = await p.quoteExactInput.staticCall(swapArgs(amt));
+    const rc = await (await p.swapExactInput({ ...swapArgs(amt), minOutputAmount: (out * 95n) / 100n, permitData: "0x" }, { value })).wait();
+    const got = Number(E.formatEther(out));
+    recordTrade(me, side === "buy"
+      ? { token: raw.token, side, eth: v, tokens: got, tx: rc.hash, block: rc.blockNumber }
+      : { token: raw.token, side, eth: got, tokens: v, tx: rc.hash, block: rc.blockNumber });
     st.className = "status ok"; st.textContent = t("t.done");
     await load();
-  } catch (e) {
-    st.className = "status err"; st.innerHTML = errMsg(e);
-  }
-});
-
-$("push").addEventListener("click", async () => {
-  const st = $("tStatus");
-  try {
-    const s = await wallet.signer();
-    await (await new E.Contract(raw.curve, CURVE_ABI, s).sweepFees(0)).wait();
-    st.className = "status ok"; st.textContent = t("t.pushed");
   } catch (e) {
     st.className = "status err"; st.innerHTML = errMsg(e);
   }
@@ -187,6 +175,10 @@ async function load() {
     $("missing").hidden = false;
     $("page").hidden = true;
     return;
+  }
+  if (!raw) {
+    raw = cachedTokens().find((x) => x.token?.toLowerCase() === addr.toLowerCase()) ?? null;
+    if (raw) { $("missing").hidden = true; $("page").hidden = false; render(); }
   }
   await readChain();
   const { tokens } = await loadTokens();

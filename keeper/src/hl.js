@@ -5,9 +5,12 @@ import { topUpOrder } from "./hl-math.js";
 const transport = new HttpTransport();
 export const info = new InfoClient({ transport });
 
-/** One Hyperliquid account per launch, derived from HL_MNEMONIC at the launch index. */
+/**
+ * One Hyperliquid account per launch, from the keeper's seed phrase. Account #0 of the
+ * seed is the operator wallet (it receives the tax), so token #n uses account #(n + 1).
+ */
 export function hlAccountFor(mnemonic, index) {
-  return mnemonicToAccount(mnemonic, { addressIndex: index });
+  return mnemonicToAccount(mnemonic, { addressIndex: index + 1 });
 }
 
 export async function loadMarkets() {
@@ -26,9 +29,10 @@ export async function loadMarkets() {
   return byName;
 }
 
-export async function ethUsd() {
+/** USD price of the chain's native coin (BNB), from Hyperliquid. */
+export async function nativeUsd(symbol = "BNB") {
   const mids = await info.allMids();
-  return Number(mids.ETH);
+  return Number(mids[symbol]);
 }
 
 export async function accountSummary(user) {

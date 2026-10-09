@@ -1,6 +1,13 @@
 {
   "functions": {
-    "api/tokens.js": { "maxDuration": 60 },
-    "api/rpc.js": { "maxDuration": 30 }
+    "api/tokens.js": {
+      "maxDuration": 60
+    },
+    "api/rpc.js": {
+      "maxDuration": 30
+    },
+    "api/flapmeta.js": {
+      "maxDuration": 60
+    }
   }
 }

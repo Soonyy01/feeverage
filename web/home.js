@@ -1,5 +1,5 @@
 import {
-  $, bars, esc, initShell, live, loadTokens, onMarkets, readChain, refreshCards, refreshTokenPrices, statBlock, t, tokenCard, totals, wireCards,
+  $, bars, cachedTokens, esc, initShell, live, loadTokens, onMarkets, readChain, refreshCards, refreshTokenPrices, statBlock, t, tokenCard, totals, wireCards,
 } from "./core.js";
 
 initShell();
@@ -116,6 +116,13 @@ setInterval(async () => {
   refreshCards($("cards"), byToken);
 }, 10_000);
 
+function show(list) {
+  tokens = list;
+  byToken.clear();
+  tokens.forEach((x) => byToken.set(x.token.toLowerCase(), x));
+  paintStats(tokens, false);
+}
+if (cachedTokens().length) show(cachedTokens());
 renderViews();
 renderCards();
 refresh();

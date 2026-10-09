@@ -1,20 +1,23 @@
-// Feeverage keeper: token trading fees on Robinhood Chain -> leveraged Hyperliquid positions.
+// Feeverage keeper: flap.sh trade tax on BNB Chain -> leveraged Hyperliquid positions.
 //
-// Tokens are launched straight from the website through the launchpad router with
-// creatorFeeRecipient = this operator wallet, and their strategy tag in the description.
+// Tokens are launched from the website on flap.sh as tax tokens whose tax beneficiary is
+// this operator wallet, with their strategy tag in the IPFS description.
 // Every cycle the keeper:
-//   1. discover  new launches whose fee recipient is the operator and that carry a tag
-//   2. account   creator fees per token from the curve / pool FeesSwept events
-//   3. claim     the operator's escrow balance, and sweep graduated pools' fees
-//   4. bridge    each token's share of ETH to its own Hyperliquid account (Relay)
-//   5. trade     free margin × leverage into the token's market and side
-//   6. serve     /status.json for the website's stats and token book
-import { createPublicClient, createWalletClient, defineChain, formatEther, http, parseAbi, parseAbiItem } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+//   1. discover  new flap.sh launches whose tax goes to the operator and that carry a tag
+//   2. account   each token's tax already paid to the operator (Tax Token Helper)
+//   3. bridge    each token's share of BNB to its own Hyperliquid account (Relay)
+//   4. trade     free margin × leverage into the token's market and side
+//   5. serve     /status.json for the website's stats and token book
+//
+// One seed phrase runs everything: account #0 is the operator (receives the tax and pays
+// gas), accounts #1, #2, … are the Hyperliquid accounts of token #0, #1, …
+import { createPublicClient, createWalletClient, formatEther, http, parseAbi, parseAbiItem } from "viem";
+import { bsc } from "viem/chains";
+import { mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
 import { createServer } from "node:http";
-import { loadState, saveState, tokenState, pendingWei, add } from "./state.js";
+import { loadState, saveState, tokenState, pendingWei } from "./state.js";
 import { quoteDeposit, executeDeposit, relayRouteSupported } from "./bridge.js";
-import { hlAccountFor, loadMarkets, ethUsd, topUpPosition, accountSummary } from "./hl.js";
+import { hlAccountFor, loadMarkets, nativeUsd, topUpPosition, accountSummary } from "./hl.js";
 import { parseStrategy } from "./strategy.js";
 
 const env = (k, d) => {
@@ -24,15 +27,14 @@ const env = (k, d) => {
 };
 
 const cfg = {
-  rpcUrl: env("RPC_URL", "https://rpc.mainnet.chain.robinhood.com"),
-  factory: env("LAUNCH_FACTORY", "0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e"),
-  escrow: env("FEE_ESCROW", "0xd3AFEB2a57f70eF218Aa82451c51B2fb0416Ac9e"),
-  hook: env("POOL_HOOK", "0xE5e702641Ea86F4ae6cC3cDaeD2B886f976Be044"),
+  rpcUrl: env("RPC_URL", "https://bsc-rpc.publicnode.com"),
+  portal: env("FLAP_PORTAL", "0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0"),
+  helper: env("FLAP_TAX_HELPER", "0x53841c73217735F37BC1775538b03b23feFD8346"),
+  ipfs: env("IPFS_GATEWAY", "https://flap.mypinata.cloud/ipfs/"),
   startBlock: BigInt(env("START_BLOCK", "0")),
-  operatorKey: env("OPERATOR_PRIVATE_KEY"),
-  mnemonic: env("HL_MNEMONIC"),
+  mnemonic: env("SEED_PHRASE", process.env.HL_MNEMONIC),
+  operatorKey: process.env.OPERATOR_PRIVATE_KEY || "",
   pollSeconds: Number(env("POLL_SECONDS", "300")),
-  minClaimWei: BigInt(env("MIN_CLAIM_WEI", "1000000000000000")),
   gasReserveWei: BigInt(env("GAS_RESERVE_WEI", "3000000000000000")),
   minBridgeUsd: Number(env("MIN_BRIDGE_USD", "12")),
   minOrderUsd: Number(env("MIN_ORDER_USD", "11")),
@@ -42,41 +44,29 @@ const cfg = {
   hlRelayChainId: Number(env("HL_RELAY_CHAIN_ID", "1337")),
   hlRelayUsdc: env("HL_RELAY_USDC", "0x00000000000000000000000000000000"),
   port: Number(env("PORT", "8787")),
-  logChunk: BigInt(env("LOG_CHUNK", "10000")),
+  logChunk: BigInt(env("LOG_CHUNK", "5000")),
   dryRun: env("DRY_RUN", "true") !== "false",
 };
 
-const FACTORY_ABI = parseAbi([
-  "event TokenLaunched(address indexed token, address indexed curve, address indexed deployer, address pairToken, uint256 launchConfigId, uint256 graduationThreshold)",
-  "function getLaunchedToken(address token) view returns ((address token,address curve,address deployer,address creatorFeeRecipient,address pairToken,uint256 graduationThreshold,uint24 poolFee,int24 tickSpacing,uint16 creatorTaxBps,bool buybackEnabled,uint8 phase,uint256 sweptQuote,uint256 sweptTokens,uint256 sweptAt,bool exists))",
+const EV_CREATED = parseAbiItem("event TokenCreated(uint256 ts, address creator, uint256 nonce, address token, string name, string symbol, string meta)");
+const HELPER_ABI = parseAbi([
+  "function getTaxTokenInfo(address taxToken) view returns ((uint16 marketBps, uint16 deflationBps, uint16 lpBps, uint16 dividendBps, uint16 taxRate, uint256 burntTokenAmount, uint256 totalQuoteSentToDividend, uint256 totalQuoteAddedToLiquidity, uint256 totalTokenAddedToLiquidity, uint256 totalQuoteSentToMarketing, address marketingWallet, address quoteToken, uint256 minimumShareBalance))",
 ]);
-const TOKEN_ABI = parseAbi([
-  "function name() view returns (string)",
-  "function symbol() view returns (string)",
-  "function description() view returns (string)",
+const PORTAL_ABI = parseAbi([
+  "function getTokenV6(address token) view returns ((uint8 status, uint256 reserve, uint256 circulatingSupply, uint256 price, uint8 tokenVersion, uint256 r, uint256 h, uint256 k, uint256 dexSupplyThresh, address quoteTokenAddress, bool nativeToQuoteSwapEnabled, bytes32 extensionID, uint256 taxRate, address pool, uint256 progress))",
 ]);
-const ESCROW_ABI = parseAbi(["function balanceOf(address) view returns (uint256)", "function claim() returns (uint256)"]);
-const HOOK_ABI = parseAbi(["function sweepPoolFees(bytes32 poolId, uint256 minConversionQuoteOut, uint256 minBuybackTokensOut)"]);
-const EV_CURVE_SWEPT = parseAbiItem("event FeesSwept(uint256 protocolAmount, uint256 buybackAmount, uint256 creatorAmount)");
-const EV_POOL_SWEPT = parseAbiItem("event PoolFeesSwept(bytes32 indexed poolId, uint256 protocolAmount, uint256 buybackAmount, uint256 creatorAmount, uint256 tokensLocked)");
-const EV_POOL_REG = parseAbiItem("event PoolRegistered(bytes32 indexed poolId, address memecoin, address quoteToken, address creator)");
+const STATUS_DEX = 4;
 
-const robinhood = defineChain({
-  id: 4663,
-  name: "Robinhood Chain",
-  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: [cfg.rpcUrl] } },
-  blockExplorers: { default: { name: "Blockscout", url: "https://robinhoodchain.blockscout.com" } },
-});
-
-const operator = privateKeyToAccount(cfg.operatorKey);
+// Operator = account #0 of the seed phrase (or an explicit private key, if set).
+const operator = cfg.operatorKey ? privateKeyToAccount(cfg.operatorKey) : mnemonicToAccount(cfg.mnemonic, { addressIndex: 0 });
 const op = operator.address.toLowerCase();
-const publicClient = createPublicClient({ chain: robinhood, transport: http(cfg.rpcUrl) });
-const walletClient = createWalletClient({ chain: robinhood, transport: http(cfg.rpcUrl), account: operator });
+const chain = { ...bsc, rpcUrls: { default: { http: [cfg.rpcUrl] } } };
+const publicClient = createPublicClient({ chain, transport: http(cfg.rpcUrl, { batch: false, retryCount: 3 }) });
+const walletClient = createWalletClient({ chain, transport: http(cfg.rpcUrl), account: operator });
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 
 let state = loadState();
-let status = { updatedAt: null, operator: operator.address, dryRun: cfg.dryRun, totals: {}, tokens: [] };
+let status = { updatedAt: null, operator: operator.address, dryRun: cfg.dryRun, chainId: 56, native: "BNB", totals: {}, tokens: [] };
 
 // ---------------------------------------------------------------- helpers
 
@@ -87,125 +77,108 @@ async function scan(fromKey, fn) {
     from = latest;
     log(`${fromKey}: START_BLOCK not set, starting at the current block ${latest}`);
   }
-  for (; from <= latest; from += cfg.logChunk) {
-    const to = from + cfg.logChunk - 1n > latest ? latest : from + cfg.logChunk - 1n;
-    await fn(from, to);
+  let chunk = cfg.logChunk;
+  while (from <= latest) {
+    const to = from + chunk - 1n > latest ? latest : from + chunk - 1n;
+    try {
+      await fn(from, to);
+    } catch (e) {
+      if (e.keepRange || chunk <= 200n) throw e;
+      chunk /= 4n; // the RPC refused the range: try smaller ones
+      continue;
+    }
     state[fromKey] = String(to);
     saveState(state);
+    from = to + 1n;
   }
 }
 
-async function write(params, label) {
-  if (cfg.dryRun) {
-    log(`  [dry-run] ${label}`);
+async function fetchMeta(cid) {
+  try {
+    const r = await fetch(cfg.ipfs + cid, { signal: AbortSignal.timeout(15000) });
+    return r.ok ? await r.json() : null;
+  } catch {
     return null;
   }
-  const { request } = await publicClient.simulateContract({ ...params, account: operator });
-  const hash = await walletClient.writeContract(request);
-  const rc = await publicClient.waitForTransactionReceipt({ hash });
-  if (rc.status !== "success") throw new Error(`${label} reverted ${hash}`);
-  log(`  ${label} ✓ ${hash}`);
-  return rc;
 }
 
 // ---------------------------------------------------------------- 1. discover
 
 async function discover() {
   await scan("launchBlock", async (fromBlock, toBlock) => {
-    const logs = await publicClient.getLogs({
-      address: cfg.factory,
-      event: FACTORY_ABI.find((x) => x.name === "TokenLaunched"),
-      fromBlock,
-      toBlock,
+    const logs = await publicClient.getLogs({ address: cfg.portal, event: EV_CREATED, fromBlock, toBlock });
+    if (!logs.length) return;
+    // flap.sh launches thousands of tokens: check all their tax receivers in one multicall.
+    const infos = await publicClient.multicall({
+      contracts: logs.map((e) => ({ address: cfg.helper, abi: HELPER_ABI, functionName: "getTaxTokenInfo", args: [e.args.token] })),
+      allowFailure: true,
     });
-    for (const e of logs) {
+    for (let i = 0; i < logs.length; i++) {
+      const e = logs[i], info = infos[i];
+      if (info.status !== "success" || info.result.marketingWallet.toLowerCase() !== op) continue;
       const token = e.args.token;
       if (state.registry.some((r) => r.token.toLowerCase() === token.toLowerCase())) continue;
-      const info = await publicClient.readContract({ address: cfg.factory, abi: FACTORY_ABI, functionName: "getLaunchedToken", args: [token] });
-      if (info.creatorFeeRecipient.toLowerCase() !== op) continue;
-      const [name, symbol, description] = await Promise.all(
-        ["name", "symbol", "description"].map((f) => publicClient.readContract({ address: token, abi: TOKEN_ABI, functionName: f }).catch(() => "")),
-      );
-      const strat = parseStrategy(description);
-      if (!strat) continue;
+      let meta = null;
+      for (let k = 0; k < 3 && !meta; k++) meta = await fetchMeta(e.args.meta);
+      const strat = parseStrategy(meta?.description);
+      if (!strat) {
+        if (!meta) log(`  ${e.args.symbol}: metadata ${e.args.meta} not reachable yet, will retry`);
+        if (!meta) throw Object.assign(new Error("IPFS not reachable"), { keepRange: true }); // rescans this range next cycle
+        continue;
+      }
       const index = state.registry.length;
       state.registry.push({
-        index, token, curve: e.args.curve, deployer: e.args.deployer, name, symbol, ...strat,
-        launchedBlock: String(e.blockNumber), launchTx: e.transactionHash, poolId: null,
+        index, token, deployer: e.args.creator, name: e.args.name, symbol: e.args.symbol, meta: e.args.meta, ...strat,
+        launchedBlock: String(e.blockNumber), launchTx: e.transactionHash,
         hlAccount: hlAccountFor(cfg.mnemonic, index).address,
       });
-      log(`new token #${index} ${symbol} → ${strat.leverage}x ${strat.isLong ? "long" : "short"} ${strat.market}`);
+      log(`new token #${index} ${e.args.symbol} → ${strat.leverage}x ${strat.isLong ? "long" : "short"} ${strat.market}`);
     }
   });
 }
 
 // ---------------------------------------------------------------- 2. account
 
+// flap.sh keeps a running total of the tax each token has paid to its receiver.
+// That total, per token, is exactly what the operator wallet received for it.
 async function account() {
-  const byCurve = new Map(state.registry.map((r) => [r.curve.toLowerCase(), r]));
-  const byToken = new Map(state.registry.map((r) => [r.token.toLowerCase(), r]));
-  await scan("feeBlock", async (fromBlock, toBlock) => {
-    if (state.registry.length === 0) return;
-    // graduated pools: learn their pool ids
-    const regs = await publicClient.getLogs({ address: cfg.hook, event: EV_POOL_REG, fromBlock, toBlock });
-    for (const e of regs) {
-      const r = byToken.get(e.args.memecoin.toLowerCase());
-      if (r && !r.poolId) {
-        r.poolId = e.args.poolId;
-        log(`  ${r.symbol} graduated, pool ${r.poolId.slice(0, 10)}…`);
-      }
-    }
-    const credit = (r, amount, where) => {
-      if (amount === 0n) return;
-      const ts = tokenState(state, r.token);
-      ts.creditedWei = add(ts.creditedWei, amount);
-      log(`  +${formatEther(amount)} ETH fees for ${r.symbol} (${where})`);
-    };
-    const curveLogs = await publicClient.getLogs({ address: [...byCurve.keys()], event: EV_CURVE_SWEPT, fromBlock, toBlock });
-    for (const e of curveLogs) credit(byCurve.get(e.address.toLowerCase()), e.args.creatorAmount, "curve");
-    const pools = state.registry.filter((r) => r.poolId);
-    if (pools.length) {
-      const poolLogs = await publicClient.getLogs({ address: cfg.hook, event: EV_POOL_SWEPT, args: { poolId: pools.map((r) => r.poolId) }, fromBlock, toBlock });
-      for (const e of poolLogs) credit(pools.find((r) => r.poolId === e.args.poolId), e.args.creatorAmount, "pool");
+  if (!state.registry.length) return;
+  const res = await publicClient.multicall({
+    contracts: state.registry.flatMap((r) => [
+      { address: cfg.helper, abi: HELPER_ABI, functionName: "getTaxTokenInfo", args: [r.token] },
+      { address: cfg.portal, abi: PORTAL_ABI, functionName: "getTokenV6", args: [r.token] },
+    ]),
+    allowFailure: true,
+  });
+  state.registry.forEach((r, i) => {
+    const info = res[2 * i], st = res[2 * i + 1];
+    if (st.status === "success") r.graduated = Number(st.result.status) === STATUS_DEX;
+    if (info.status !== "success") return;
+    const ts = tokenState(state, r.token);
+    const sent = info.result.totalQuoteSentToMarketing;
+    if (sent > BigInt(ts.creditedWei)) {
+      log(`  +${formatEther(sent - BigInt(ts.creditedWei))} BNB tax from ${r.symbol}`);
+      ts.creditedWei = sent.toString();
     }
   });
 }
 
-// ---------------------------------------------------------------- 3. claim
+// ---------------------------------------------------------------- 3. bridge
 
-async function claim() {
-  // Graduated pools: the fee recipient may sweep them itself.
-  for (const r of state.registry.filter((x) => x.poolId)) {
-    try {
-      await publicClient.simulateContract({ address: cfg.hook, abi: HOOK_ABI, functionName: "sweepPoolFees", args: [r.poolId, 0n, 0n], account: operator });
-      await write({ address: cfg.hook, abi: HOOK_ABI, functionName: "sweepPoolFees", args: [r.poolId, 0n, 0n] }, `sweep pool fees ${r.symbol}`);
-    } catch {
-      /* nothing to sweep, or the pool needs the launchpad's own operator */
-    }
-  }
-  const owed = await publicClient.readContract({ address: cfg.escrow, abi: ESCROW_ABI, functionName: "balanceOf", args: [operator.address] });
-  if (owed >= cfg.minClaimWei) {
-    log(`claim ${formatEther(owed)} ETH from escrow`);
-    await write({ address: cfg.escrow, abi: ESCROW_ABI, functionName: "claim" }, "claim");
-  }
-}
-
-// ---------------------------------------------------------------- 4. bridge
-
-async function bridge(r, ts, ethPrice) {
+async function bridge(r, ts, bnbPrice) {
   const pending = pendingWei(ts);
-  const usd = Number(formatEther(pending)) * ethPrice;
+  const usd = Number(formatEther(pending)) * bnbPrice;
   if (pending <= 0n || usd < cfg.minBridgeUsd) return;
   const balance = await publicClient.getBalance({ address: operator.address });
   if (balance - cfg.gasReserveWei < pending) {
-    log(`#${r.index} ${r.symbol}: ${formatEther(pending)} ETH owed but not claimed yet`);
+    log(`#${r.index} ${r.symbol}: ${formatEther(pending)} BNB owed, wallet has ${formatEther(balance)} BNB (keeps ${formatEther(cfg.gasReserveWei)} for gas)`);
     return;
   }
-  log(`#${r.index} bridge ${formatEther(pending)} ETH (~$${usd.toFixed(2)}) → Hyperliquid ${r.hlAccount}`);
+  log(`#${r.index} bridge ${formatEther(pending)} BNB (~$${usd.toFixed(2)}) → Hyperliquid ${r.hlAccount}`);
   if (cfg.dryRun) return;
   const quote = await quoteDeposit(cfg, { user: operator.address, recipient: r.hlAccount, amountWei: pending });
-  // Book it first: a crash mid-bridge must never send the same ETH twice.
-  ts.bridgedWei = add(ts.bridgedWei, pending);
+  // Book it first: a crash mid-bridge must never send the same BNB twice.
+  ts.bridgedWei = (BigInt(ts.bridgedWei) + pending).toString();
   saveState(state);
   try {
     const requestId = await executeDeposit(cfg, { quote, walletClient, publicClient, log });
@@ -213,12 +186,12 @@ async function bridge(r, ts, ethPrice) {
     ts.bridges.push({ at: new Date().toISOString(), wei: pending.toString(), usd, requestId });
   } catch (e) {
     ts.bridgedWei = (BigInt(ts.bridgedWei) - pending).toString();
-    ts.failedWei = add(ts.failedWei, pending);
-    log(`  bridge FAILED, ${formatEther(pending)} ETH parked in failedWei for review: ${e.message}`);
+    ts.failedWei = (BigInt(ts.failedWei) + pending).toString();
+    log(`  bridge FAILED, ${formatEther(pending)} BNB parked in failedWei for review: ${e.message}`);
   }
 }
 
-// ---------------------------------------------------------------- 5. trade
+// ---------------------------------------------------------------- 4. trade
 
 async function trade(r, ts, markets) {
   const market = markets.get(r.market);
@@ -228,9 +201,9 @@ async function trade(r, ts, markets) {
   if (order && !order.dryRun) ts.orders.push({ at: new Date().toISOString(), ...order });
 }
 
-// ---------------------------------------------------------------- 6. status
+// ---------------------------------------------------------------- 5. status
 
-async function buildStatus(ethPrice) {
+async function buildStatus(bnbPrice) {
   const tokens = [];
   let fees = 0, deployed = 0, equity = 0, notional = 0, pnl = 0;
   for (const r of state.registry) {
@@ -241,9 +214,10 @@ async function buildStatus(ethPrice) {
     } catch {}
     const pos = hl?.positions.find((p) => p.coin === r.market);
     const t = {
-      index: r.index, token: r.token, curve: r.curve, deployer: r.deployer, name: r.name, symbol: r.symbol,
-      market: r.market, isLong: r.isLong, leverage: r.leverage, hlAccount: r.hlAccount, graduated: Boolean(r.poolId), poolId: r.poolId,
-      launchedBlock: r.launchedBlock,
+      index: r.index, token: r.token, deployer: r.deployer, name: r.name, symbol: r.symbol, meta: r.meta,
+      market: r.market, isLong: r.isLong, leverage: r.leverage, hlAccount: r.hlAccount, graduated: Boolean(r.graduated),
+      launchedBlock: r.launchedBlock, block: Number(r.launchedBlock),
+      // amounts in BNB (field names are shared with the website)
       feesEth: Number(formatEther(BigInt(ts.creditedWei))),
       pendingEth: Number(formatEther(pendingWei(ts))),
       bridgedUsd: ts.bridgedUsd,
@@ -258,8 +232,8 @@ async function buildStatus(ethPrice) {
     tokens.push(t);
   }
   status = {
-    updatedAt: new Date().toISOString(), operator: operator.address, dryRun: cfg.dryRun, ethUsd: ethPrice,
-    totals: { tokens: tokens.length, feesEth: fees, feesUsd: fees * ethPrice, deployedUsd: deployed, equityUsd: equity, notionalUsd: notional, pnlUsd: pnl },
+    updatedAt: new Date().toISOString(), operator: operator.address, dryRun: cfg.dryRun, chainId: 56, native: "BNB", nativeUsd: bnbPrice,
+    totals: { tokens: tokens.length, feesEth: fees, feesUsd: fees * bnbPrice, deployedUsd: deployed, equityUsd: equity, notionalUsd: notional, pnlUsd: pnl },
     tokens,
   };
 }
@@ -280,15 +254,14 @@ function serve() {
 // ---------------------------------------------------------------- loop
 
 async function cycle() {
-  const [markets, ethPrice] = await Promise.all([loadMarkets(), ethUsd()]);
+  const [markets, bnbPrice] = await Promise.all([loadMarkets(), nativeUsd("BNB")]);
   await discover();
   await account();
-  await claim().catch((e) => log(`claim error: ${e.shortMessage ?? e.message}`));
-  log(`cycle: ${state.registry.length} tokens, ETH $${ethPrice}${cfg.dryRun ? " [DRY RUN]" : ""}`);
+  log(`cycle: ${state.registry.length} tokens, BNB $${bnbPrice}${cfg.dryRun ? " [DRY RUN]" : ""}`);
   for (const r of state.registry) {
     const ts = tokenState(state, r.token);
     try {
-      await bridge(r, ts, ethPrice);
+      await bridge(r, ts, bnbPrice);
       await trade(r, ts, markets);
     } catch (e) {
       log(`#${r.index} error: ${e.shortMessage ?? e.message}`);
@@ -296,16 +269,17 @@ async function cycle() {
       saveState(state);
     }
   }
-  await buildStatus(ethPrice);
+  await buildStatus(bnbPrice);
 }
 
 async function check() {
-  log(`operator ${operator.address} (${formatEther(await publicClient.getBalance({ address: operator.address }))} ETH)`);
-  log(`chain id ${await publicClient.getChainId()}`);
+  log(`operator ${operator.address} (${formatEther(await publicClient.getBalance({ address: operator.address }))} BNB)`);
+  log(`chain id ${await publicClient.getChainId()} (BNB Chain = 56)`);
+  log(`latest block ${await publicClient.getBlockNumber()}  ← use this as START_BLOCK and in the website config`);
   const route = await relayRouteSupported(cfg);
-  log(`Relay route Robinhood(4663)=${route.origin} → Hyperliquid(${cfg.hlRelayChainId})=${route.destination}`);
-  log(`Hyperliquid account #0 ${hlAccountFor(cfg.mnemonic, 0).address}`);
-  log(`put this operator address in the website CONFIG.feeRecipient`);
+  log(`Relay route BNB Chain(56)=${route.origin} → Hyperliquid(${cfg.hlRelayChainId})=${route.destination}`);
+  log(`Hyperliquid account for token #0: ${hlAccountFor(cfg.mnemonic, 0).address}`);
+  log(`put the operator address in the website config.js → feeRecipient`);
 }
 
 const args = process.argv.slice(2);

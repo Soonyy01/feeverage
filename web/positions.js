@@ -1,5 +1,5 @@
 import {
-  $, C, E, esc, ethPx, fmt, holdingLive, initShell, loadHoldings, loadTokens, market, onMarkets, pickRpc, provider, readChain,
+  $, C, E, NATIVE, esc, ethPx, fmt, holdingLive, initShell, loadHoldings, loadTokens, market, onMarkets, pickRpc, provider, readChain,
   refreshTokenPrices, short, t, tokenLogo, tokenUrl, usd, wallet,
 } from "./core.js";
 
@@ -31,7 +31,7 @@ function renderTable() {
 
   const trades = holdings.flatMap((h) => h.trades.map((x) => ({ ...x, h }))).sort((a, b) => b.block - a.block).slice(0, 50);
   $("history").innerHTML = trades.length ? `<div class="ptable"><table>
-    <thead><tr><th>Token</th><th></th><th class="num">ETH</th><th class="num">Tokens</th><th class="num">Tx</th></tr></thead>
+    <thead><tr><th>Token</th><th></th><th class="num">${NATIVE}</th><th class="num">Tokens</th><th class="num">Tx</th></tr></thead>
     <tbody>${trades.map((x) => `<tr>
       <td><div class="tok">${tokenLogo(x.h)}<div><b>$${esc(x.h.symbol)}</b></div></div></td>
       <td class="${x.side === "buy" ? "pos" : "neg"}"><b>${x.side === "buy" ? t("p.buy") : t("p.sell")}</b></td>
@@ -43,9 +43,9 @@ function renderTable() {
 
 // Every price tick: re-mark values and PnL in USD.
 function paintLive() {
-  const ethPx = market.ETH?.px ?? 0;
+  const ethPx = market[NATIVE]?.px ?? 0;
   if (ethBal != null) {
-    $("ethBal").textContent = fmt(ethBal, 4) + " ETH";
+    $("ethBal").textContent = fmt(ethBal, 4) + " " + NATIVE;
     $("ethBalUsd").textContent = ethPx ? usd(ethBal * ethPx) : "—";
   }
   let val = 0, spent = 0, pnl = 0, any = false;

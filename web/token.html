@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Token · Feeverage</title>
 <script>try{var t=localStorage.getItem("feev.theme");if(t)document.documentElement.dataset.theme=t;var l=localStorage.getItem("feev.lang");if(l!=="en"&&l!=="zh")l=(navigator.language||"").toLowerCase().indexOf("zh")===0?"zh":"en";document.documentElement.lang=l;}catch(e){}</script>
-<meta name="description" content="Launch a token on Robinhood Chain. Its trading fees fund a leveraged Hyperliquid position.">
+<meta name="description" content="Launch a token on BNB Chain. Its trading fees fund a leveraged Hyperliquid position.">
 <meta name="theme-color" content="#f4f2e8">
 <meta property="og:title" content="Feeverage — your token's fees. Leveraged.">
-<meta property="og:description" content="Launch a token on Robinhood Chain. Its trading fees fund a leveraged Hyperliquid position.">
+<meta property="og:description" content="Launch a token on BNB Chain. Its trading fees fund a leveraged Hyperliquid position.">
 <meta property="og:image" content="assets/og-image.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/png" href="assets/logo-96.png">
@@ -80,7 +80,7 @@
             <span class="label" data-i18n="t.trade">Trade</span>
             <div id="trade" style="display:grid;gap:14px">
               <div class="seg" role="group" aria-label="Trade side"><button type="button" data-t="buy" aria-pressed="true" data-i18n="t.buy">Buy</button><button type="button" data-t="sell" aria-pressed="false" data-i18n="t.sell">Sell</button></div>
-              <label class="f" for="tAmt"><span id="tAmtLbl" data-i18n="t.pay">Pay (ETH)</span><input id="tAmt" type="number" min="0" step="0.001" placeholder="0.001"></label>
+              <label class="f" for="tAmt"><span id="tAmtLbl" data-i18n="t.pay">Pay (BNB)</span><input id="tAmt" type="number" min="0" step="0.001" placeholder="0.001"></label>
               <div class="label muted" id="tQuote" data-i18n="t.quote">Enter an amount</div>
               <button class="btn dark" id="tGo" type="button" style="width:100%" data-i18n="t.buy">Buy</button>
             </div>
@@ -98,7 +98,7 @@
 <footer class="foot">
   <div class="wrap">
     <img src="assets/logo-96.png" alt="" width="36" height="36">
-    <span class="label">Robinhood × Hyperliquid</span>
+    <span class="label">BNB Chain × Hyperliquid</span>
   </div>
 </footer>
 

@@ -1,8 +1,8 @@
-// ETH on Robinhood Chain -> USDC (perps margin) on Hyperliquid, via Relay.
+// BNB on BNB Chain -> USDC (perps margin) on Hyperliquid, via Relay.
 // The deposit is credited straight to the token's Hyperliquid account, so that
 // account never needs gas or an Arbitrum hop.
 
-const ROBINHOOD_CHAIN_ID = 4663;
+const ORIGIN_CHAIN_ID = Number(process.env.ORIGIN_CHAIN_ID || 56); // BNB Chain
 const NATIVE = "0x0000000000000000000000000000000000000000";
 
 export async function relayRouteSupported(cfg) {
@@ -10,14 +10,14 @@ export async function relayRouteSupported(cfg) {
   if (!res.ok) throw new Error(`Relay /chains ${res.status}`);
   const { chains } = await res.json();
   const ids = new Set(chains.filter((c) => !c.disabled).map((c) => Number(c.id)));
-  return { origin: ids.has(ROBINHOOD_CHAIN_ID), destination: ids.has(cfg.hlRelayChainId) };
+  return { origin: ids.has(ORIGIN_CHAIN_ID), destination: ids.has(cfg.hlRelayChainId) };
 }
 
 export async function quoteDeposit(cfg, { user, recipient, amountWei }) {
   const body = {
     user,
     recipient,
-    originChainId: ROBINHOOD_CHAIN_ID,
+    originChainId: ORIGIN_CHAIN_ID,
     destinationChainId: cfg.hlRelayChainId,
     originCurrency: NATIVE,
     destinationCurrency: cfg.hlRelayUsdc,
@@ -48,7 +48,7 @@ export async function executeDeposit(cfg, { quote, walletClient, publicClient, l
     for (const item of step.items ?? []) {
       if (item.status === "complete") continue;
       const d = item.data;
-      if (Number(d.chainId) !== ROBINHOOD_CHAIN_ID) throw new Error(`Relay step on chain ${d.chainId}`);
+      if (Number(d.chainId) !== ORIGIN_CHAIN_ID) throw new Error(`Relay step on chain ${d.chainId}`);
       const hash = await walletClient.sendTransaction({
         to: d.to,
         data: d.data,

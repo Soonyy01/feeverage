@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Launch · Feeverage</title>
 <script>try{var t=localStorage.getItem("feev.theme");if(t)document.documentElement.dataset.theme=t;var l=localStorage.getItem("feev.lang");if(l!=="en"&&l!=="zh")l=(navigator.language||"").toLowerCase().indexOf("zh")===0?"zh":"en";document.documentElement.lang=l;}catch(e){}</script>
-<meta name="description" content="Launch a token on Robinhood Chain. Its trading fees fund a leveraged Hyperliquid position.">
+<meta name="description" content="Launch a token on BNB Chain. Its trading fees fund a leveraged Hyperliquid position.">
 <meta name="theme-color" content="#f4f2e8">
 <meta property="og:title" content="Feeverage — your token's fees. Leveraged.">
-<meta property="og:description" content="Launch a token on Robinhood Chain. Its trading fees fund a leveraged Hyperliquid position.">
+<meta property="og:description" content="Launch a token on BNB Chain. Its trading fees fund a leveraged Hyperliquid position.">
 <meta property="og:image" content="assets/og-image.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/png" href="assets/logo-96.png">
@@ -61,11 +61,8 @@
                 <span class="drop-text"><b id="dropTitle" data-i18n="l.logo.s">Drop an image here or tap to choose</b><small id="dropState" class="muted"></small></span>
                 <input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
               </label>
-              <input id="logo" type="hidden">
-              <input id="logoUrl" type="url" maxlength="512" placeholder="https://…/logo.png" hidden>
-              <button class="linkish" id="logoMode" type="button" data-i18n="l.logo.link">Use an image link instead</button>
             </div>
-            <label class="f" for="desc"><span data-i18n="l.desc">Description</span> <small data-i18n="l.desc.s"></small>
+            <label class="f" for="desc"><span data-i18n="l.desc">Description</span>
               <textarea id="desc" maxlength="1900" data-i18n-ph="l.desc.ph"></textarea></label>
             <div class="row">
               <label class="f" for="x">X / Twitter <input id="x" type="url" maxlength="256" placeholder="https://x.com/…"></label>
@@ -95,8 +92,8 @@
             <div class="row">
               <label class="f" for="buy"><span data-i18n="l.buy">Your first buy</span> <small data-i18n="l.buy.s"></small>
                 <input id="buy" type="number" min="0" step="0.001" placeholder="0"></label>
-              <label class="f" for="tax"><span data-i18n="l.tax">Extra trade tax</span> <small data-i18n="l.tax.s"></small>
-                <input id="tax" type="number" min="0" max="10" step="0.1" value="0"></label>
+              <label class="f" for="tax"><span data-i18n="l.tax">Trade tax</span>
+                <select id="tax"></select></label>
             </div>
           </fieldset>
 
@@ -117,16 +114,15 @@
             <div class="row2 label"><span id="figLeft">$1 → $5 BTC</span><span id="figRight">5× long</span></div>
           </div>
           <dl class="kv">
-            <dt data-i18n="l.fee">Launch fee</dt><dd id="sumFee">—</dd>
+            <dt data-i18n="l.fee">Trade tax</dt><dd id="sumFee">—</dd>
             <dt data-i18n="l.first">Your first buy</dt><dd id="sumBuy">—</dd>
             <dt class="total" data-i18n="l.send">You send</dt><dd class="total" id="sumTotal">—</dd>
           </dl>
           <dl class="kv">
             <dt data-i18n="l.per100">Every $100 of fees opens</dt><dd id="sumExp">—</dd>
             <dt data-i18n="l.toliq">Move to liquidation</dt><dd id="sumLiq">—</dd>
-            <dt><span data-i18n="l.mark">Live price</span> <span id="markLbl">BTC</span></dt><dd id="sumMark">—</dd>
+            <dt><span id="markLbl">BTC</span> <span data-i18n="l.mark">mark</span></dt><dd id="sumMark">—</dd>
           </dl>
-          <p class="note" data-i18n="l.note"></p>
         </aside>
       </div>
     </section>
@@ -136,7 +132,7 @@
 <footer class="foot">
   <div class="wrap">
     <img src="assets/logo-96.png" alt="" width="36" height="36">
-    <span class="label">Robinhood × Hyperliquid</span>
+    <span class="label">BNB Chain × Hyperliquid</span>
   </div>
 </footer>
 

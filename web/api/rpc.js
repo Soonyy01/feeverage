@@ -1,10 +1,11 @@
-// Robinhood Chain RPC proxy for visitors (and the keeper) whose network can't reach the
+// BNB Chain RPC proxy for visitors (and the keeper) whose network can't reach the
 // public endpoints directly. It only relays: signed transactions are signed elsewhere,
 // no key ever touches this server.
 const UPSTREAMS = [
-  process.env.ROBINHOOD_RPC,
-  "https://rpc.mainnet.chain.robinhood.com",
-  "https://rpc.nodeflare.app/robinhood/public",
+  process.env.BSC_RPC,
+  "https://bsc-dataseed.bnbchain.org",
+  "https://bsc-rpc.publicnode.com",
+  "https://bsc-dataseed1.binance.org",
 ].filter(Boolean);
 
 const ALLOWED = new Set([
@@ -43,5 +44,5 @@ export default async function handler(req, res) {
     } catch {}
   }
   res.statusCode = 502;
-  res.end(JSON.stringify({ jsonrpc: "2.0", id: calls[0]?.id ?? null, error: { code: -32000, message: "Robinhood Chain RPC unreachable" } }));
+  res.end(JSON.stringify({ jsonrpc: "2.0", id: calls[0]?.id ?? null, error: { code: -32000, message: "BNB Chain RPC unreachable" } }));
 }
