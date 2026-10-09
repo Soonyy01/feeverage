@@ -643,7 +643,7 @@ export function statBlock(root) {
       }
       if (el.dataset.stat === "pnlUsd") { el.classList.toggle("pos", val > 0); el.classList.toggle("neg", val < 0); }
     });
-    root.querySelectorAll("[data-stat-sub=feesEth]").forEach((s) => (s.textContent = `${fmt(tot.feesEth ?? 0, 4)} ETH`));
+    root.querySelectorAll("[data-stat-sub=feesEth]").forEach((s) => (s.textContent = `${fmt(tot.feesEth ?? 0, 4)} ${NATIVE}`));
   };
 }
 

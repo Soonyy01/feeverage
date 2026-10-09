@@ -28,7 +28,7 @@ const D = {
     "m.x.none": "Set xUrl in config.js",
 
     "hero.strip": "Your token's fees. Leveraged.",
-    "hero.copy": "Launch a token on <strong>BNB Chain</strong> through <strong>flap.sh</strong>. Every trade pays a tax, and every bit of it is wired into one leveraged <strong>Hyperliquid</strong> position the creator picks at launch. Holders watch it run, or get liquidated, in public.",
+    "hero.copy": "Launch a token on <strong>BNB Chain</strong>. Every trade pays a tax, and every bit of it is wired into one leveraged <strong>Hyperliquid</strong> position the creator picks at launch. Holders watch it run, or get liquidated, in public.",
     "hero.launch": "Launch a token →", "hero.browse": "Browse tokens",
     "fig.title": "Margin / Notional", "fig.margin": "1× margin", "fig.notional": "Notional",
     "fig.copy": "$1 of trading fees becomes <b id=\"heroNotional\">$5</b> of exposure on Hyperliquid.",
@@ -41,9 +41,9 @@ const D = {
 
     "how.kicker": "The machine", "how.title": "How it works",
     "how.lede": "Feeverage turns a memecoin into a fund with one job: every fee its traders pay is added to a single leveraged bet on Hyperliquid. Here is the whole loop, start to finish.",
-    "how.s1.t": "Launch", "how.s1.p": "Pick a name, ticker and logo, then the position: a Hyperliquid market (BTC, ETH, BNB, HYPE, SOL, XRP or DOGE), long or short, and 1× to 20× leverage. One transaction on BNB Chain creates the token on flap.sh, with an optional first buy. The strategy is written into the token's metadata and never changes.",
-    "how.s2.t": "Trade", "how.s2.p": "The token trades on its flap.sh bonding curve, priced in BNB. Every buy and sell pays the trade tax the creator chose (1%, 3%, 5% or 10%). The tax goes to Feeverage instead of a person.",
-    "how.s3.t": "Collect", "how.s3.p": "flap.sh pays each token's tax out in BNB to the Feeverage operator wallet. The keeper reads how much every token has sent, so each BNB is booked to the token it came from.",
+    "how.s1.t": "Launch", "how.s1.p": "Pick a name, ticker and logo, then the position: a Hyperliquid market (BTC, ETH, BNB, HYPE, SOL, XRP or DOGE), long or short, and 1× to 20× leverage. One transaction on BNB Chain creates the token, with an optional first buy. The strategy is written into the token's metadata and never changes.",
+    "how.s2.t": "Trade", "how.s2.p": "The token trades on its bonding curve, priced in BNB. Every buy and sell pays the trade tax the creator chose (1%, 3%, 5% or 10%). The tax goes to Feeverage instead of a person.",
+    "how.s3.t": "Collect", "how.s3.p": "Each token's tax is paid out in BNB to the Feeverage operator wallet. The keeper reads how much every token has sent, so each BNB is booked to the token it came from.",
     "how.s4.t": "Bridge", "how.s4.p": "When a token has at least $12 of fees waiting, the keeper bridges that BNB to USDC and deposits it straight into the token's own Hyperliquid account. Each token has its own account, so positions never mix.",
     "how.s5.t": "Lever up", "how.s5.p": "The new margin is put to work at once: size = deposit × 0.95 × leverage, in the token's market and direction, cross margin. 5% stays aside for trading fees and funding. The position is never closed by Feeverage.",
     "how.s6.t": "Graduate & beyond", "how.s6.p": "When the curve fills, the token moves to PancakeSwap and the tax keeps working there. Fees keep flowing to the position. If the position is ever liquidated, the next fees simply open a new one with the same settings.",
@@ -57,7 +57,7 @@ const D = {
     "how.g.funded": "Funded", "how.g.funded.d": "Total fees already bridged into the position, in USD.",
     "how.g.topup": "Next top-up", "how.g.topup.d": "Fees collected on BNB Chain and not yet bridged. At $12 they are added to the position.",
     "how.g.liq": "Liquidation", "how.g.liq.d": "Price at which the position is wiped out, and how far away it is right now.",
-    "how.g.curve": "Curve", "how.g.curve.d": "How full the flap.sh bonding curve is. When it fills, the token lists on PancakeSwap.",
+    "how.g.curve": "Curve", "how.g.curve.d": "How full the bonding curve is. When it fills, the token lists on PancakeSwap.",
     "how.docs": "Read the full docs →",
 
     "tok.kicker": "All launches", "tok.title": "Tokens",
@@ -137,7 +137,7 @@ const D = {
     "m.x.none": "请在 config.js 中设置 xUrl",
 
     "hero.strip": "你的代币手续费，加杠杆。",
-    "hero.copy": "通过 <strong>flap.sh</strong> 在 <strong>BNB Chain</strong> 上发射代币。每笔交易都会支付交易税，所有税收都会注入创建者在发射时选定的一个 <strong>Hyperliquid</strong> 杠杆仓位。持有者可以公开看着它增长，或者被清算。",
+    "hero.copy": "在 <strong>BNB Chain</strong> 上发射代币。每笔交易都会支付交易税，所有税收都会注入创建者在发射时选定的一个 <strong>Hyperliquid</strong> 杠杆仓位。持有者可以公开看着它增长，或者被清算。",
     "hero.launch": "发射代币 →", "hero.browse": "浏览代币",
     "fig.title": "保证金 / 名义价值", "fig.margin": "1× 保证金", "fig.notional": "名义价值",
     "fig.copy": "每 $1 交易手续费在 Hyperliquid 上变成 <b id=\"heroNotional\">$5</b> 的敞口。",
@@ -150,9 +150,9 @@ const D = {
 
     "how.kicker": "运作机制", "how.title": "运作方式",
     "how.lede": "Feeverage 把一个 meme 币变成只有一个任务的基金：交易者支付的每一笔手续费，都会加到 Hyperliquid 上的同一个杠杆仓位里。下面是完整流程。",
-    "how.s1.t": "发射", "how.s1.p": "填写名称、代码和 logo，然后选择仓位：Hyperliquid 市场（BTC、ETH、BNB、HYPE、SOL、XRP 或 DOGE）、做多或做空，以及 1× 到 20× 的杠杆。在 BNB Chain 上一笔交易即可在 flap.sh 上创建代币，并可选择首笔买入。策略写入代币元数据，永远不会更改。",
-    "how.s2.t": "交易", "how.s2.p": "代币在 flap.sh 的联合曲线上交易，以 BNB 计价。每次买入和卖出都会支付创建者选择的交易税（1%、3%、5% 或 10%）。税收全部进入 Feeverage，而不是任何个人。",
-    "how.s3.t": "归集", "how.s3.p": "flap.sh 会把每个代币的税收以 BNB 支付给 Feeverage 运营钱包。keeper 读取每个代币已发送的金额，确保每一个 BNB 都记到来源代币上。",
+    "how.s1.t": "发射", "how.s1.p": "填写名称、代码和 logo，然后选择仓位：Hyperliquid 市场（BTC、ETH、BNB、HYPE、SOL、XRP 或 DOGE）、做多或做空，以及 1× 到 20× 的杠杆。在 BNB Chain 上一笔交易即可创建代币，并可选择首笔买入。策略写入代币元数据，永远不会更改。",
+    "how.s2.t": "交易", "how.s2.p": "代币在联合曲线上交易，以 BNB 计价。每次买入和卖出都会支付创建者选择的交易税（1%、3%、5% 或 10%）。税收全部进入 Feeverage，而不是任何个人。",
+    "how.s3.t": "归集", "how.s3.p": "每个代币的税收会以 BNB 支付给 Feeverage 运营钱包。keeper 读取每个代币已发送的金额，确保每一个 BNB 都记到来源代币上。",
     "how.s4.t": "跨链", "how.s4.p": "当某个代币待处理的手续费达到 $12，keeper 会把这些 BNB 跨链换成 USDC，并直接存入该代币自己的 Hyperliquid 账户。每个代币都有独立账户，仓位永不混合。",
     "how.s5.t": "加杠杆", "how.s5.p": "新的保证金立即投入使用：仓位规模 = 存入金额 × 0.95 × 杠杆，按代币设定的市场和方向，全仓保证金。5% 留作交易手续费和资金费。Feeverage 永远不会主动平仓。",
     "how.s6.t": "毕业及之后", "how.s6.p": "联合曲线填满后，代币会上线 PancakeSwap，交易税在那里继续生效，手续费持续流向仓位。如果仓位被清算，之后的手续费会按相同设置重新开仓。",
@@ -166,7 +166,7 @@ const D = {
     "how.g.funded": "已注资", "how.g.funded.d": "已经跨链注入仓位的手续费总额（美元）。",
     "how.g.topup": "下次加仓", "how.g.topup.d": "在 BNB Chain 上已收取但尚未跨链的手续费。达到 $12 后加入仓位。",
     "how.g.liq": "清算", "how.g.liq.d": "仓位被清空的价格，以及当前距离它还有多远。",
-    "how.g.curve": "曲线", "how.g.curve.d": "flap.sh 联合曲线的填充进度。填满后代币上线 PancakeSwap。",
+    "how.g.curve": "曲线", "how.g.curve.d": "联合曲线的填充进度。填满后代币上线 PancakeSwap。",
     "how.docs": "阅读完整文档 →",
 
     "tok.kicker": "全部发射", "tok.title": "代币",

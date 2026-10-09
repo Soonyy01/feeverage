@@ -63,12 +63,12 @@
       <article>
         <span class="label muted">Documentation</span>
         <h1 class="echo-h" id="en-overview" style="margin-top:12px">Feeverage docs</h1>
-        <p class="lead">Feeverage is a token launchpad on <b>BNB Chain</b>, built on <b>flap.sh</b>. Every token launched here is wired to one leveraged perpetual position on <b>Hyperliquid</b>. Trading the token pays a tax; the tax becomes margin; the margin is levered into the market the creator picked at launch.</p>
+        <p class="lead">Feeverage is a token launchpad on <b>BNB Chain</b>. Every token launched here is wired to one leveraged perpetual position on <b>Hyperliquid</b>. Trading the token pays a tax; the tax becomes margin; the margin is levered into the market the creator picked at launch.</p>
         <div class="callout"><b>In one line:</b> your token's fees, leveraged. $1 of fees at 5× becomes about $4.75 of exposure.</div>
         <div class="tbl"><table>
           <thead><tr><th>Piece</th><th>Where it lives</th><th>What it does</th></tr></thead>
           <tbody>
-            <tr><td>Token + bonding curve</td><td>BNB Chain (flap.sh)</td><td>Price discovery from the first trade. Lists on PancakeSwap when the curve fills.</td></tr>
+            <tr><td>Token + bonding curve</td><td>BNB Chain</td><td>Price discovery from the first trade. Lists on PancakeSwap when the curve fills.</td></tr>
             <tr><td>Fee recipient</td><td>BNB Chain</td><td>Receives the trade tax of every Feeverage token, in BNB.</td></tr>
             <tr><td>Keeper</td><td>Feeverage server</td><td>Books fees per token, bridges BNB to USDC, places orders, publishes live data.</td></tr>
             <tr><td>Position account</td><td>Hyperliquid</td><td>One account per token. Holds the margin and the position.</td></tr>
@@ -85,11 +85,11 @@
 
         <h2 id="en-launch">Launching a token</h2>
         <ol>
-          <li><b>Describe the token.</b> Name, ticker, a logo picked from your gallery, a description and optional socials (X, Telegram, website). The logo and description are pinned on IPFS through flap.sh, so wallets, explorers and flap.sh show them too. If you skip the logo, one is drawn from the ticker.</li>
+          <li><b>Describe the token.</b> Name, ticker, a logo picked from your gallery, a description and optional socials (X, Telegram, website). The logo and description are pinned on IPFS, so wallets and explorers show them too. If you skip the logo, one is drawn from the ticker.</li>
           <li><b>Pick the position.</b> A Hyperliquid market (BTC, ETH, BNB, HYPE, SOL, XRP or DOGE), long or short, and a leverage from 1× to 20×. Leverage is also capped by the market's own maximum on Hyperliquid.</li>
           <li><b>Optional first buy.</b> Your first buy happens in the same transaction as the launch, so nobody can buy before you. Leave it empty to launch without buying.</li>
           <li><b>Pick the trade tax.</b> 1%, 3%, 5% or 10% on every buy and sell. All of it funds the position, so a higher tax grows the position faster but makes the token more expensive to trade.</li>
-          <li><b>Confirm.</b> The site pins the metadata, finds the token address (flap.sh tax tokens end in <span class="mono">7777</span>) and simulates the transaction, so an error shows up before you pay any gas. One transaction creates the token on flap.sh and your first buy. You pay your first buy and gas.</li>
+          <li><b>Confirm.</b> The site pins the metadata, finds the token address (tax tokens end in <span class="mono">7777</span>) and simulates the transaction, so an error shows up before you pay any gas. One transaction creates the token and your first buy. You pay your first buy and gas.</li>
         </ol>
         <h3>The strategy line</h3>
         <p>Feeverage appends one line to your description that records the position, for example:</p>
@@ -107,12 +107,12 @@
         </ul>
 
         <h2 id="en-fees">Fees</h2>
-        <p>Every buy and sell of a Feeverage token pays the trade tax chosen at launch, on the flap.sh bonding curve and later on PancakeSwap. flap.sh keeps a small protocol share and pays the rest in BNB to the Feeverage fee recipient. On Feeverage the whole tax goes to the position, never to a person.</p>
+        <p>Every buy and sell of a Feeverage token pays the trade tax chosen at launch, on the bonding curve and later on PancakeSwap. The protocol keeps a small share and pays the rest in BNB to the Feeverage fee recipient. On Feeverage the whole tax goes to the position, never to a person.</p>
         <div class="tbl"><table>
           <thead><tr><th>Fee</th><th>Who sets it</th><th>Where it goes</th></tr></thead>
           <tbody>
-            <tr><td>flap.sh trading fee</td><td>flap.sh</td><td>flap.sh, 1% on the bonding curve</td></tr>
-            <tr><td>Trade tax (1–10%)</td><td>Creator, at launch</td><td>The position (after flap.sh's protocol share)</td></tr>
+            <tr><td>Protocol trading fee</td><td>Protocol</td><td>Protocol, 1% on the bonding curve</td></tr>
+            <tr><td>Trade tax (1–10%)</td><td>Creator, at launch</td><td>The position (after the protocol share)</td></tr>
             
             <tr><td>Bridge + Hyperliquid fees</td><td>Bridge and Hyperliquid</td><td>Taken from the token's own fees</td></tr>
           </tbody>
@@ -120,7 +120,7 @@
 
         <h2 id="en-pipeline">From fee to position</h2>
         <ol>
-          <li><b>Collect.</b> Every trade pays the tax. flap.sh converts it to BNB and sends it to the Feeverage fee recipient.</li>
+          <li><b>Collect.</b> Every trade pays the tax. It is converted to BNB and sent to the Feeverage fee recipient.</li>
                     <li><b>Book.</b> Every few minutes the keeper reads how much BNB each token has sent and credits it to that token, so every token's money stays separate.</li>
           <li><b>Bridge.</b> Once a token has at least <b>$12</b> waiting, the keeper bridges that BNB to USDC on Hyperliquid, straight into the token's account. On each token this shows as <i>Next top-up $x / $12</i>.</li>
           <li><b>Trade.</b> The new margin is levered into the token's market and side.</li>
@@ -163,10 +163,10 @@
         <p>The token page shows a live <b>health</b> gauge: <b>Safe</b> above 25% from liquidation, <b>Healthy</b> above 12%, <b>Tight</b> above 5%, and <b>Danger</b> below that. Because size is added over time, the average entry moves and the real liquidation price drifts. After a liquidation the account is empty; fees that arrive later open a fresh position with the same settings.</p>
 
         <h2 id="en-graduation">Curve & graduation</h2>
-        <p>A new token trades on its flap.sh bonding curve, priced in BNB. The token page shows how far the curve has filled. When it reaches 80%, the token lists on PancakeSwap. The trade tax keeps applying there, so fees keep flowing to the position after listing.</p>
+        <p>A new token trades on its bonding curve, priced in BNB. The token page shows how far the curve has filled. When it reaches 80%, the token lists on PancakeSwap. The trade tax keeps applying there, so fees keep flowing to the position after listing.</p>
 
         <h2 id="en-trading">Buying & selling</h2>
-        <p>Before graduation you can trade any token directly on its page: choose <b>Buy</b> or <b>Sell</b>, enter an amount and confirm in your wallet. The page shows a quote first and protects you with a 3% slippage limit. Selling asks for a one-time token approval. Trades go through the flap.sh Portal. After the token lists, trade it on PancakeSwap using its contract address.</p>
+        <p>Before graduation you can trade any token directly on its page: choose <b>Buy</b> or <b>Sell</b>, enter an amount and confirm in your wallet. The page shows a quote first and protects you with a 3% slippage limit. Selling asks for a one-time token approval. Trades go through the launch contract. After the token lists, trade it on PancakeSwap using its contract address.</p>
 
         <h2 id="en-tokens">Token list</h2>
         <p>The home page lists every Feeverage token. Sort by <b>Newest</b>, <b>Live positions</b>, <b>Top PnL</b>, <b>Top MCAP</b>, <b>Most funded</b>, <b>Next top-up</b> or <b>Graduated</b>, filter by <b>All</b>, <b>Long</b> or <b>Short</b>, and search by ticker, name, market or address. Each card shows the strategy, live PnL, market cap, funding and progress to the next top-up. Tap the address to copy it.</p>
@@ -176,7 +176,7 @@
         <ul>
           <li><b>BNB balance</b> of your wallet on BNB Chain.</li>
           <li><b>Balance</b> of each token, read from the token contract.</li>
-          <li><b>Price</b> of each token, read live from flap.sh, refreshed every 10 seconds.</li>
+          <li><b>Price</b> of each token, read live from the chain, refreshed every 10 seconds.</li>
           <li><b>Average entry</b>, from the buys you made on Feeverage from this browser.</li>
           <li><b>Value</b> and <b>PnL</b> in USD, re-marked every second with the live BNB price, plus how far the token has moved since your entry.</li>
           <li>Your <b>trade history</b>, with a link to every transaction.</li>
@@ -188,7 +188,7 @@
           <thead><tr><th>Contract</th><th>Address</th></tr></thead>
           <tbody>
             <tr><td>Network</td><td class="mono">BNB Chain mainnet</td></tr>
-            <tr><td>flap.sh Portal</td><td class="mono"><a href="https://bscscan.com/address/0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0" target="_blank" rel="noopener">0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0</a></td></tr>
+            <tr><td>Launch contract</td><td class="mono"><a href="https://bscscan.com/address/0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0" target="_blank" rel="noopener">0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0</a></td></tr>
             <tr><td>Tax token (V3) implementation</td><td class="mono"><a href="https://bscscan.com/address/0x024f18294970B5c76c0691b87f138A0317156422" target="_blank" rel="noopener">0x024f18294970B5c76c0691b87f138A0317156422</a></td></tr>
             <tr><td>Tax Token Helper</td><td class="mono"><a href="https://bscscan.com/address/0x53841c73217735F37BC1775538b03b23feFD8346" target="_blank" rel="noopener">0x53841c73217735F37BC1775538b03b23feFD8346</a></td></tr>
             <tr><td>Fee recipient</td><td class="mono" data-fee-recipient>set in config</td></tr>
@@ -241,12 +241,12 @@
       <article>
         <span class="label muted">文档</span>
         <h1 class="echo-h" id="zh-overview" style="margin-top:12px">Feeverage 文档</h1>
-        <p class="lead">Feeverage 是 <b>BNB Chain</b> 上基于 <b>flap.sh</b> 的代币发射平台。在这里发射的每个代币都连接着 <b>Hyperliquid</b> 上的一个杠杆永续仓位。交易代币会支付交易税；交易税变成保证金；保证金按创建者在发射时选定的市场加上杠杆。</p>
+        <p class="lead">Feeverage 是 <b>BNB Chain</b> 上的代币发射平台。在这里发射的每个代币都连接着 <b>Hyperliquid</b> 上的一个杠杆永续仓位。交易代币会支付交易税；交易税变成保证金；保证金按创建者在发射时选定的市场加上杠杆。</p>
         <div class="callout"><b>一句话：</b>你的代币手续费，加杠杆。$1 手续费在 5× 杠杆下约等于 $4.75 的敞口。</div>
         <div class="tbl"><table>
           <thead><tr><th>组成部分</th><th>所在位置</th><th>作用</th></tr></thead>
           <tbody>
-            <tr><td>代币 + 联合曲线</td><td>BNB Chain（flap.sh）</td><td>从第一笔交易开始定价。曲线填满后上线 PancakeSwap。</td></tr>
+            <tr><td>代币 + 联合曲线</td><td>BNB Chain</td><td>从第一笔交易开始定价。曲线填满后上线 PancakeSwap。</td></tr>
             <tr><td>手续费接收地址</td><td>BNB Chain</td><td>以 BNB 接收所有 Feeverage 代币的交易税。</td></tr>
             <tr><td>Keeper</td><td>Feeverage 服务器</td><td>按代币记账手续费、把 BNB 跨链换成 USDC、下单、发布实时数据。</td></tr>
             <tr><td>仓位账户</td><td>Hyperliquid</td><td>每个代币一个账户，存放保证金和仓位。</td></tr>
@@ -263,11 +263,11 @@
 
         <h2 id="zh-launch">发射代币</h2>
         <ol>
-          <li><b>填写代币信息。</b>名称、代码、从相册选择的 logo、简介，以及可选的社交链接（X、Telegram、网站）。logo 和简介会通过 flap.sh 固定在 IPFS 上，钱包、浏览器和 flap.sh 都能显示。如果不选 logo，会根据代码自动生成一个。</li>
+          <li><b>填写代币信息。</b>名称、代码、从相册选择的 logo、简介，以及可选的社交链接（X、Telegram、网站）。logo 和简介会固定在 IPFS 上，钱包和浏览器都能显示。如果不选 logo，会根据代码自动生成一个。</li>
           <li><b>选择仓位。</b>Hyperliquid 市场（BTC、ETH、BNB、HYPE、SOL、XRP 或 DOGE）、做多或做空，以及 1× 到 20× 的杠杆。杠杆同时受该市场在 Hyperliquid 上的最大杠杆限制。</li>
           <li><b>可选的首笔买入。</b>首笔买入与发射在同一笔交易中完成，所以没人能抢在你之前买入。留空则只发射不买入。</li>
           <li><b>选择交易税。</b>每次买入和卖出收取 1%、3%、5% 或 10%，全部用于仓位。税率越高仓位增长越快，但代币的交易成本也越高。</li>
-          <li><b>确认。</b>网站会先固定元数据、生成代币地址（flap.sh 税收代币地址以 <span class="mono">7777</span> 结尾）并模拟交易，如果会失败，你在支付 gas 之前就能看到错误。一笔交易即可在 flap.sh 上创建代币并完成首笔买入。你只需支付首笔买入金额和 gas。</li>
+          <li><b>确认。</b>网站会先固定元数据、生成代币地址（税收代币地址以 <span class="mono">7777</span> 结尾）并模拟交易，如果会失败，你在支付 gas 之前就能看到错误。一笔交易即可创建代币并完成首笔买入。你只需支付首笔买入金额和 gas。</li>
         </ol>
         <h3>策略说明</h3>
         <p>Feeverage 会在简介末尾自动添加一行，记录这个代币的仓位，例如：</p>
@@ -285,12 +285,12 @@
         </ul>
 
         <h2 id="zh-fees">手续费</h2>
-        <p>Feeverage 代币的每一次买入和卖出都会支付发射时选定的交易税，先在 flap.sh 联合曲线上，之后在 PancakeSwap 上。flap.sh 保留一小部分协议份额，其余以 BNB 支付给 Feeverage 的手续费接收地址。在 Feeverage 上，交易税全部进入仓位，永远不会进入任何个人的口袋。</p>
+        <p>Feeverage 代币的每一次买入和卖出都会支付发射时选定的交易税，先在联合曲线上，之后在 PancakeSwap 上。协议保留一小部分份额，其余以 BNB 支付给 Feeverage 的手续费接收地址。在 Feeverage 上，交易税全部进入仓位，永远不会进入任何个人的口袋。</p>
         <div class="tbl"><table>
           <thead><tr><th>费用</th><th>由谁设定</th><th>去向</th></tr></thead>
           <tbody>
-            <tr><td>flap.sh 交易手续费</td><td>flap.sh</td><td>flap.sh，联合曲线上 1%</td></tr>
-            <tr><td>交易税（1–10%）</td><td>创建者，发射时设定</td><td>仓位（扣除 flap.sh 协议份额后）</td></tr>
+            <tr><td>协议交易手续费</td><td>协议</td><td>协议，联合曲线上 1%</td></tr>
+            <tr><td>交易税（1–10%）</td><td>创建者，发射时设定</td><td>仓位（扣除协议份额后）</td></tr>
             
             <tr><td>跨链 + Hyperliquid 费用</td><td>跨链桥和 Hyperliquid</td><td>从代币自身的手续费中扣除</td></tr>
           </tbody>
@@ -298,7 +298,7 @@
 
         <h2 id="zh-pipeline">从手续费到仓位</h2>
         <ol>
-          <li><b>收取。</b>每笔交易都会支付交易税。flap.sh 将其换成 BNB 并发送到 Feeverage 的手续费接收地址。</li>
+          <li><b>收取。</b>每笔交易都会支付交易税。税收会换成 BNB 并发送到 Feeverage 的手续费接收地址。</li>
                     <li><b>记账。</b>Keeper 每隔几分钟读取每个代币已发送的 BNB，并记到对应代币上，确保每个代币的资金互不混合。</li>
           <li><b>跨链。</b>某个代币待处理的手续费达到 <b>$12</b> 后，keeper 会把这些 BNB 跨链换成 Hyperliquid 上的 USDC，直接存入该代币的账户。每个代币上都会显示为 <i>下次加仓 $x / $12</i>。</li>
           <li><b>交易。</b>新的保证金按代币设定的市场和方向加上杠杆。</li>
@@ -341,10 +341,10 @@
         <p>代币页面会实时显示 <b>健康度</b>：距清算超过 25% 为 <b>安全</b>，超过 12% 为 <b>健康</b>，超过 5% 为 <b>紧张</b>，低于 5% 为 <b>危险</b>。由于仓位会不断加仓，平均开仓价和实际清算价都会变化。清算后账户清空；之后到账的手续费会以相同设置开新仓。</p>
 
         <h2 id="zh-graduation">曲线与毕业</h2>
-        <p>新代币在 flap.sh 的联合曲线上交易，以 BNB 计价。代币页面会显示曲线的填充进度。达到 80% 时，代币上线 PancakeSwap。交易税在那里继续生效，所以上线后手续费仍会流向仓位。</p>
+        <p>新代币在联合曲线上交易，以 BNB 计价。代币页面会显示曲线的填充进度。达到 80% 时，代币上线 PancakeSwap。交易税在那里继续生效，所以上线后手续费仍会流向仓位。</p>
 
         <h2 id="zh-trading">买入与卖出</h2>
-        <p>毕业前，你可以直接在代币页面交易：选择 <b>买入</b> 或 <b>卖出</b>，输入数量，然后在钱包中确认。页面会先显示报价，并以 3% 的滑点上限保护你。卖出前需要一次性授权代币。交易通过 flap.sh Portal 完成。代币上线后，请使用合约地址在 PancakeSwap 上交易。</p>
+        <p>毕业前，你可以直接在代币页面交易：选择 <b>买入</b> 或 <b>卖出</b>，输入数量，然后在钱包中确认。页面会先显示报价，并以 3% 的滑点上限保护你。卖出前需要一次性授权代币。交易通过发射合约完成。代币上线后，请使用合约地址在 PancakeSwap 上交易。</p>
 
         <h2 id="zh-tokens">代币列表</h2>
         <p>首页列出所有 Feeverage 代币。可以按 <b>最新</b>、<b>持仓中</b>、<b>盈亏最高</b>、<b>市值最高</b>、<b>注资最多</b>、<b>即将加仓</b> 或 <b>已毕业</b> 排序，按 <b>全部</b>、<b>做多</b> 或 <b>做空</b> 筛选，并可按代码、名称、市场或地址搜索。每张卡片显示策略、实时盈亏、市值、注资情况和距下次加仓的进度。点击地址即可复制。</p>
@@ -354,7 +354,7 @@
         <ul>
           <li>你在 BNB Chain 上的 <b>BNB 余额</b>。</li>
           <li>每个代币的 <b>余额</b>，直接从代币合约读取。</li>
-          <li>每个代币的 <b>价格</b>，从 flap.sh 实时读取，每 10 秒刷新一次。</li>
+          <li>每个代币的 <b>价格</b>，从链上实时读取，每 10 秒刷新一次。</li>
           <li><b>平均成本</b>，根据你在此浏览器中通过 Feeverage 完成的买入计算。</li>
           <li>以美元计的 <b>价值</b> 和 <b>盈亏</b>，每秒按实时 BNB 价格重新计算，并显示相对你成本价的涨跌幅。</li>
           <li>你的 <b>交易记录</b>，每笔都附有交易链接。</li>
@@ -366,7 +366,7 @@
           <thead><tr><th>合约</th><th>地址</th></tr></thead>
           <tbody>
             <tr><td>网络</td><td class="mono">BNB Chain 主网</td></tr>
-            <tr><td>flap.sh Portal</td><td class="mono"><a href="https://bscscan.com/address/0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0" target="_blank" rel="noopener">0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0</a></td></tr>
+            <tr><td>发射合约</td><td class="mono"><a href="https://bscscan.com/address/0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0" target="_blank" rel="noopener">0xe2cE6ab80874Fa9Fa2aAE65D277Dd6B8e65C9De0</a></td></tr>
             <tr><td>税收代币 (V3) 实现合约</td><td class="mono"><a href="https://bscscan.com/address/0x024f18294970B5c76c0691b87f138A0317156422" target="_blank" rel="noopener">0x024f18294970B5c76c0691b87f138A0317156422</a></td></tr>
             <tr><td>Tax Token Helper</td><td class="mono"><a href="https://bscscan.com/address/0x53841c73217735F37BC1775538b03b23feFD8346" target="_blank" rel="noopener">0x53841c73217735F37BC1775538b03b23feFD8346</a></td></tr>
             <tr><td>手续费接收地址</td><td class="mono" data-fee-recipient>在 config 中设置</td></tr>
