@@ -363,15 +363,103 @@ async function pool(items, n, fn) {
   }));
 }
 
-// The site's own server finds this site's launches (flap.sh launches thousands of tokens a day).
+// The site's own server also looks for launches; it is only a second source, never waited on long.
 async function fromServer() {
   if (typeof location === "undefined" || !/^https?:/.test(location.protocol) || !isAddr(C.feeRecipient)) return null;
   try {
     const q = new URLSearchParams({ fee: C.feeRecipient, from: String(Number(C.startBlock) || 0) });
-    const r = await fetch(`api/tokens?${q}`, { signal: AbortSignal.timeout(55000) });
+    const r = await fetch(`api/tokens?${q}`, { signal: AbortSignal.timeout(9000) });
     if (!r.ok) return null;
     const j = await r.json();
     return Array.isArray(j.tokens) ? j.tokens : null;
+  } catch {
+    return null;
+  }
+}
+
+// The browser finds launches itself, straight from BNB Chain: every flap.sh launch since
+// startBlock, then one Multicall3 call per 150 tokens to keep those whose tax goes to the
+// operator. What was scanned is remembered, so later visits only read the new blocks.
+const LOG_RPCS = () => [...new Set([...(C.logRpcs || []), "https://bsc-rpc.publicnode.com", "https://bsc.drpc.org", "https://1rpc.io/bnb", C.rpc])];
+let logRpc = 0;
+async function rawRpc(method, params) {
+  const urls = LOG_RPCS();
+  let err;
+  for (let k = 0; k < urls.length; k++) {
+    const i = (logRpc + k) % urls.length;
+    try {
+      const r = await fetch(urls[i], { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), signal: AbortSignal.timeout(8000) });
+      const j = await r.json();
+      if (j.error) throw new Error(j.error.message);
+      logRpc = i;
+      return j.result;
+    } catch (e) { err = e; }
+  }
+  throw err;
+}
+const PI = () => new E.Interface(PORTAL_ABI);
+const HI = () => new E.Interface(HELPER_ABI);
+const MI = () => new E.Interface(["function aggregate3((address target,bool allowFailure,bytes callData)[] calls) view returns ((bool success,bytes returnData)[])"]);
+async function launchLogs(a, b) {
+  try {
+    return await rawRpc("eth_getLogs", [{ address: C.portal, topics: [PI().getEvent("TokenCreated").topicHash], fromBlock: E.toQuantity(a), toBlock: E.toQuantity(b) }]);
+  } catch (e) {
+    if (b - a < 400) throw e;
+    const m = Math.floor((a + b) / 2);
+    return [...(await launchLogs(a, m)), ...(await launchLogs(m + 1, b))];
+  }
+}
+async function oursOnly(cands) {
+  const fee = String(C.feeRecipient).toLowerCase(), H = HI(), M = MI(), out = [];
+  for (let i = 0; i < cands.length; i += 150) {
+    const chunk = cands.slice(i, i + 150);
+    const data = M.encodeFunctionData("aggregate3", [chunk.map((x) => ({ target: C.taxHelper, allowFailure: true, callData: H.encodeFunctionData("getTaxTokenInfo", [x.token]) }))]);
+    const [res] = M.decodeFunctionResult("aggregate3", await rawRpc("eth_call", [{ to: "0xcA11bde05977b3631167028862bE2a173976CA11", data }, "latest"]));
+    res.forEach((r, k) => {
+      try { if (r.success && H.decodeFunctionResult("getTaxTokenInfo", r.returnData)[0].marketingWallet.toLowerCase() === fee) out.push(chunk[k]); } catch {}
+    });
+  }
+  return out;
+}
+let scanning = null;
+export function scanLaunches() {
+  return (scanning ??= (async () => {
+    const start = Number(C.startBlock) || 0;
+    if (!start || !isAddr(C.feeRecipient)) return [];
+    const k = KEY + "scan." + String(C.feeRecipient).toLowerCase();
+    let st = store.get(k, null);
+    if (!st || st.start !== start) st = { start, to: start - 1, found: [] };
+    const latest = Number(await rawRpc("eth_blockNumber", []));
+    const SPAN = 5000, ranges = [];
+    for (let a = st.to + 1; a <= latest; a += SPAN) ranges.push([a, Math.min(latest, a + SPAN - 1)]);
+    ranges.reverse(); // newest first
+    const P = PI();
+    let done = true;
+    await pool(ranges, 6, async ([a, b]) => {
+      let logs;
+      try { logs = await launchLogs(a, b); } catch { done = false; throw new Error("logs"); }
+      const cands = [];
+      for (const l of logs) {
+        try { const ev = P.parseLog(l); cands.push({ token: ev.args.token, deployer: ev.args.creator, name: ev.args.name, symbol: ev.args.symbol, meta: ev.args.meta, block: Number(l.blockNumber), tx: l.transactionHash }); } catch {}
+      }
+      if (cands.length) {
+        try { st.found.push(...(await oursOnly(cands))); } catch { done = false; throw new Error("filter"); }
+      }
+    });
+    const seen = new Set();
+    st.found = st.found.filter((x) => !seen.has(x.token.toLowerCase()) && seen.add(x.token.toLowerCase()));
+    if (done) { st.to = latest; store.set(k, st); }
+    return st.found;
+  })().finally(() => setTimeout(() => (scanning = null), 0)));
+}
+
+// Strategy written into the launch transaction's salt (see saltPrefix).
+async function saltStrategy(txHash) {
+  try {
+    const t = await rawRpc("eth_getTransactionByHash", [txHash]);
+    const b = E.getBytes(PI().decodeFunctionData("newTokenV6", t.input)[0].salt);
+    if (new TextDecoder().decode(b.slice(0, 4)) !== "FEEV" || ![0x4c, 0x53].includes(b[4])) return null;
+    return parseStrategy(`feeverage:${new TextDecoder().decode(b.slice(6, 16)).replace(/\0+$/, "")}:${b[4] === 0x4c ? "L" : "S"}:${b[5]}`);
   } catch {
     return null;
   }
@@ -383,16 +471,22 @@ async function inspect(x) {
   if (!C.feeRecipient || info.marketingWallet.toLowerCase() !== C.feeRecipient.toLowerCase()) return null;
   const tk = new E.Contract(x.token, TOKEN_ABI, provider);
   const [name, symbol, cid] = await Promise.all([x.name ?? tk.name(), x.symbol ?? tk.symbol(), x.meta ?? tk.metaURI()]);
-  const meta = await fetchMeta(cid);
-  const st = parseStrategy(meta?.description ?? x.description ?? "") ?? knownStrategy(x.token);
+  // Known list and salt are instant; IPFS is only waited on when neither has the strategy.
+  const quick = knownStrategy(x.token) ?? (x.tx ? await saltStrategy(x.tx) : null);
+  const meta = quick ? null : await fetchMeta(cid);
+  const st = quick ?? parseStrategy(meta?.description ?? x.description ?? "");
   if (!st) return null;
-  return { token: x.token, deployer: x.deployer ?? meta?.creator ?? null, name, symbol, meta: cid, description: meta?.description ?? x.description ?? "",
-    logo: meta?.logo ?? x.logo ?? "", socials: meta?.socials ?? {}, ...st, block: x.block ?? 0, feesEth: null, pendingEth: null };
+  return { token: x.token, deployer: x.deployer ?? meta?.creator ?? null, name, symbol, meta: cid, description: meta?.description ?? x.description ?? null,
+    logo: meta?.logo ?? x.logo ?? null, socials: meta?.socials ?? {}, ...st, block: x.block ?? 0, feesEth: null, pendingEth: null };
 }
 
 async function fromChain() {
   const found = new Map();
-  for (const x of (await fromServer()) ?? []) found.set(x.token.toLowerCase(), x);
+  // The browser's own scan decides; the server only gets a moment more once the scan is done.
+  const scan = scanLaunches().catch(() => []);
+  const [mine, srv] = await Promise.all([scan, Promise.race([fromServer(), scan.then(() => new Promise((r) => setTimeout(() => r(null), 1200)))])]);
+  for (const x of srv ?? []) found.set(x.token.toLowerCase(), x);
+  for (const x of mine) if (!found.has(x.token.toLowerCase())) found.set(x.token.toLowerCase(), x);
   // Launches made from this browser show up immediately, before any indexer has seen them.
   for (const m of store.get(KEY + "launches", [])) if (!found.has(m.token.toLowerCase())) found.set(m.token.toLowerCase(), m);
   const out = [];
@@ -438,9 +532,10 @@ async function enrichChain(list) {
         // Without a keeper, everything not yet bridged counts toward the next top-up.
         if (x.pendingEth == null) x.pendingEth = Math.max(0, sent - (x.bridgedEth ?? 0));
       }).catch(() => {}),
-      x.logo == null && x.meta ? fetchMeta(x.meta).then((m) => { if (m) { x.logo = m.logo; x.socials ??= m.socials; x.description ??= m.description; } }) : null,
     ].filter(Boolean));
     if (x.spotEth != null && x.supply) x.mcapEth = x.spotEth * x.supply;
+    // Logo and description from IPFS arrive in the background; the list doesn't wait for them.
+    if (x.logo == null && x.meta) fetchMeta(x.meta).then((m) => { if (m) { x.logo = m.logo; x.socials ??= m.socials; x.description ??= m.description; } });
   }));
 }
 
